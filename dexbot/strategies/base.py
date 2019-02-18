@@ -154,7 +154,7 @@ class StrategyBase(Storage, StateMachine, Events):
                           'BitShares account name for the bot to operate with',
                           ''),
             ConfigElement('market', 'string', 'USD:BTS', 'Market',
-                          'BitShares market to operate on, in the format ASSET:OTHERASSET, for example \"USD:BTS\"',
+                          'BitShares market to operate on, in the format QUOTE/BASE, for example \"BTS/USD\"',
                           r'[A-Z\.]+[:\/][A-Z\.]+'),
             ConfigElement('fee_asset', 'string', 'BTS', 'Fee asset',
                           'Asset to be used to pay transaction fees',
