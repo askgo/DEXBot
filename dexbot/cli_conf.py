@@ -258,8 +258,11 @@ def configure_dexbot(config, ctx):
             [('NEW', 'Create a new worker'),
              ('DEL', 'Delete a worker'),
              ('EDIT', 'Edit a worker'),
-             ('CONF', 'Redo general config')])
+             ('LIST', 'List your existing workers'),
+             ('NODES', 'Edit Node Selection'),
+             ('ADD_NODE', 'Add Node')])
 
+        
         if action == 'EDIT':
             worker_name = whiptail.menu("Select worker to edit", [(index, index) for index in workers])
             config['workers'][worker_name] = configure_worker(whiptail, config['workers'][worker_name])
@@ -275,7 +278,11 @@ def configure_dexbot(config, ctx):
         elif action == 'NEW':
             txt = whiptail.prompt("Your name for the new worker")
             config['workers'][txt] = configure_worker(whiptail, {})
-        elif action == 'CONF':
+        elif action == 'LIST':
+            worker_name = whiptail.menu("Your active workers",
+                                        [(index, index) for index in workers])
+
+        elif action == 'NODES':
             choice = whiptail.node_radiolist(
                 msg="Choose node",
                 items=select_choice(config['node'][0], [(index, index) for index in config['node']])
@@ -283,6 +290,12 @@ def configure_dexbot(config, ctx):
             # Move selected node as first item in the config file's node list
             config['node'].remove(choice)
             config['node'].insert(0, choice)
+
+            setup_systemd(whiptail, config)
+        elif action == 'ADD_NODE':
+            txt = whiptail.prompt("Your name for the new node: e.g. wss://dexnode.net/ws")
+            config['node'][0] = txt
+            ## overrides the top position
 
             setup_systemd(whiptail, config)
     whiptail.clear()

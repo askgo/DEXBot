@@ -73,7 +73,7 @@ DetailElement = collections.namedtuple('DetailTab', 'type name title file')
 
 # External exchanges used to calculate center price
 EXCHANGES = [
-    ('none', 'None. Use Manual or Bitshares DEX Price (default)'),
+#    ('none', 'None. Use Manual or Bitshares DEX Price (default)'),
     ('gecko', 'Coingecko'),
     ('waves', 'Waves DEX'),
     ('kraken', 'Kraken'),
