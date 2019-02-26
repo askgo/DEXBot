@@ -49,7 +49,7 @@ class Strategy(StrategyBase):
                           'Order fill threshold to reset orders', (0, 100, 2, '%')),
             ConfigElement('reset_on_price_change', 'bool', False, 'Reset orders on center price change',
                           'Reset orders when center price is changed more than threshold '
-                          '(set False for external feeds)', None),
+                          '(set False when using external feeds)', None),
             ConfigElement('price_change_threshold', 'float', 2, 'Price change threshold',
                           'Define center price threshold to react on', (0, 100, 2, '%')),
             ConfigElement('custom_expiration', 'bool', False, 'Custom expiration',
