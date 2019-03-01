@@ -12,10 +12,10 @@ class Strategy(StrategyBase):
     @classmethod
     def configure(cls, return_base_config=True):
         return StrategyBase.configure(return_base_config) + [
-            ConfigElement('external_price_source', 'choice', EXCHANGES[0], 'External price source',
-                          'The bot will try to get price information from this source', EXCHANGES),
             ConfigElement('external_feed', 'bool', False, 'External price feed',
                           'Use external reference price instead of center price acquired from the market', None),
+            ConfigElement('external_price_source', 'choice', EXCHANGES[0], 'External price source',
+                          'The bot will try to get price information from this source', EXCHANGES),
             ConfigElement('amount', 'float', 1, 'Amount',
                           'Fixed order size, expressed in quote asset, unless "relative order size" selected',
                           (0, None, 8, '')),
@@ -49,7 +49,7 @@ class Strategy(StrategyBase):
                           'Order fill threshold to reset orders', (0, 100, 2, '%')),
             ConfigElement('reset_on_price_change', 'bool', False, 'Reset orders on center price change',
                           'Reset orders when center price is changed more than threshold '
-                          '(set False for external feeds)', None),
+                          '(set False when using external feeds)', None),
             ConfigElement('price_change_threshold', 'float', 2, 'Price change threshold',
                           'Define center price threshold to react on', (0, 100, 2, '%')),
             ConfigElement('custom_expiration', 'bool', False, 'Custom expiration',
@@ -87,7 +87,7 @@ class Strategy(StrategyBase):
 
         # Set external price source, defaults to False if not found
         self.external_feed = self.worker.get('external_feed', False)
-        self.external_price_source = self.worker.get('external_price_source', None)
+        self.external_price_source = self.worker.get('external_price_source', 'gecko')
 
         if self.external_feed:
             # Get external center price from given source
