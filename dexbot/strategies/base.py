@@ -155,7 +155,7 @@ class StrategyBase(Storage, StateMachine, Events):
                           ''),
             ConfigElement('market', 'string', 'BTS/USD', 'Market',
                           'BitShares market to operate on, in the format QUOTE/BASE, for example \"BTS/USD\"',
-                          r'[A-Z\.]+[:\/][A-Z\.]+'),
+                          r'[A-Z0-9\.]+[:\/][A-Z0-9\.]+'),
             ConfigElement('fee_asset', 'string', 'BTS', 'Fee asset',
                           'Asset to be used to pay transaction fees',
                           r'[A-Z\.]+')
