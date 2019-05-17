@@ -6,7 +6,7 @@ import threading
 import copy
 
 import dexbot.errors as errors
-from dexbot.strategies.base import StrategyBase
+#from dexbot.strategies.base import StrategyBase
 
 from bitshares.notify import Notify
 from bitshares.instance import shared_bitshares_instance
@@ -19,7 +19,7 @@ log_workers = logging.getLogger('dexbot.per_worker')
 # GUIs can add a handler to this logger to get a stream of events of the running workers.
 
 
-class WorkerInfrastructure(threading.Thread):
+class CoreWorkerInfrastructure(threading.Thread):
 
     def __init__(
         self,
@@ -63,6 +63,7 @@ class WorkerInfrastructure(threading.Thread):
                     importlib.import_module(worker["module"]),
                     'Strategy'
                 )
+                print("Worker Name", worker_name, sep=":")
                 self.workers[worker_name] = strategy_class(
                     config=config,
                     name=worker_name,
@@ -108,7 +109,6 @@ class WorkerInfrastructure(threading.Thread):
             finally:
                 self.jobs = set()
 
-        self.config_lock.acquire()
         for worker_name, worker in self.config["workers"].items():
             if worker_name not in self.workers:
                 continue
@@ -124,13 +124,11 @@ class WorkerInfrastructure(threading.Thread):
                     self.workers[worker_name].error_ontick(e)
                 except Exception:
                     self.workers[worker_name].log.exception("in error_ontick()")
-        self.config_lock.release()
 
     def on_market(self, data):
         if data.get("deleted", False):  # No info available on deleted orders
             return
 
-        self.config_lock.acquire()
         for worker_name, worker in self.config["workers"].items():
             if worker_name not in self.workers:
                 continue
@@ -147,10 +145,8 @@ class WorkerInfrastructure(threading.Thread):
                         self.workers[worker_name].error_onMarketUpdate(e)
                     except Exception:
                         self.workers[worker_name].log.exception("in error_onMarketUpdate()")
-        self.config_lock.release()
 
     def on_account(self, account_update):
-        self.config_lock.acquire()
         account = account_update.account
         for worker_name, worker in self.config["workers"].items():
             if worker_name not in self.workers:
@@ -168,18 +164,23 @@ class WorkerInfrastructure(threading.Thread):
                         self.workers[worker_name].error_onAccount(e)
                     except Exception:
                         self.workers[worker_name].log.exception("in error_onAccountUpdate()")
-        self.config_lock.release()
-
-    def add_worker(self, worker_name, config):
-        with self.config_lock:
-            self.config['workers'][worker_name] = config['workers'][worker_name]
-            self.init_workers(config)
-        self.update_notify()
 
     def run(self):
         self.init_workers(self.config)
         self.update_notify()
         self.notify.listen()
+
+    def remove_market(self, worker_name):
+        """ Remove the market only if the worker is the only one using it
+        """
+#        with self.config_lock:
+        market = self.config['workers'][worker_name]['market']
+        for name, worker in self.config['workers'].items():
+            if market == worker['market']:
+                break  # Found the same market, do nothing
+            else:
+            # No markets found, safe to remove
+                self.markets.remove(market)
 
     def stop(self, worker_name=None, pause=False):
         """ Used to stop the worker(s)
@@ -195,9 +196,9 @@ class WorkerInfrastructure(threading.Thread):
                 # Worker was not found meaning it does not exist or it is paused already
                 return
 
-            with self.config_lock:
-                account = self.config['workers'][worker_name]['account']
-                self.config['workers'].pop(worker_name)
+#            with self.config_lock:
+            account = self.config['workers'][worker_name]['account']
+            self.config['workers'].pop(worker_name)
 
             self.accounts.remove(account)
             if pause and worker_name in self.workers:
@@ -216,35 +217,6 @@ class WorkerInfrastructure(threading.Thread):
         else:
             # No workers left, close websocket
             self.notify.websocket.close()
-
-    def remove_worker(self, worker_name=None):
-        if worker_name:
-            self.workers[worker_name].purge()
-        else:
-            for worker in self.workers:
-                self.workers[worker].purge()
-
-    def remove_market(self, worker_name):
-        """ Remove the market only if the worker is the only one using it
-        """
-        with self.config_lock:
-            market = self.config['workers'][worker_name]['market']
-            for name, worker in self.config['workers'].items():
-                if market == worker['market']:
-                    break  # Found the same market, do nothing
-            else:
-                # No markets found, safe to remove
-                self.markets.remove(market)
-
-    @staticmethod
-    def remove_offline_worker(config, worker_name, bitshares_instance):
-        # Initialize the base strategy to get control over the data
-        strategy = StrategyBase(worker_name, config, bitshares_instance=bitshares_instance)
-        strategy.clear_all_worker_data()
-
-    @staticmethod
-    def remove_offline_worker_data(worker_name):
-        StrategyBase.purge_all_local_worker_data(worker_name)
 
     def do_next_tick(self, job):
         """ Add a callable to be executed on the next tick """

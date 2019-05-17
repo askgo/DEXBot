@@ -1,3 +1,4 @@
+import datetime
 import logging
 import math
 import time
@@ -189,6 +190,10 @@ class StrategyBase(BitsharesOrderEngine, BitsharesPriceFeed):
             }
         )
 
+        self.orders_log = logging.LoggerAdapter(
+            logging.getLogger('dexbot.orders_log'), {}
+        )
+
     def pause(self):
         """ Pause the worker
 
@@ -279,6 +284,37 @@ class StrategyBase(BitsharesOrderEngine, BitsharesPriceFeed):
             profit = round(math.sqrt(base_roi * quote_roi) - 1, 4)
 
         return profit
+
+    def write_order_log(self, worker_name, order):
+        """ Write order log to csv file
+            :param string | worker_name: Name of the worker
+            :param object | order: Order that was fulfilled
+        """
+        operation_type = 'TRADE'
+
+        if order['base']['symbol'] == self.market['base']['symbol']:
+            base_symbol = order['base']['symbol']
+            base_amount = -order['base']['amount']
+            quote_symbol = order['quote']['symbol']
+            quote_amount = order['quote']['amount']
+        else:
+            base_symbol = order['quote']['symbol']
+            base_amount = order['quote']['amount']
+            quote_symbol = order['base']['symbol']
+            quote_amount = -order['base']['amount']
+
+        message = '{};{};{};{};{};{};{};{}'.format(
+            worker_name,
+            order['id'],
+            operation_type,
+            base_symbol,
+            base_amount,
+            quote_symbol,
+            quote_amount,
+            datetime.datetime.now().isoformat()
+        )
+
+        self.orders_log.info(message)
 
     @property
     def account(self):
