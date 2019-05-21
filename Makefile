@@ -51,6 +51,7 @@ check: pip
 package: build
 	pyinstaller gui.spec
 	pyinstaller cli.spec
+	pyinstaller cli_core.spec
 
 dist: build
 	python3 setup.py sdist upload -r pypi

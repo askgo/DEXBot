@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+
+from collections import OrderedDict
+
 import logging
 import os
 import os.path
@@ -25,6 +28,16 @@ if "LANG" not in os.environ:
 import click  # noqa: E402
 
 
+from concurrent.futures.thread import ThreadPoolExecutor
+MAX_WORKERS = 20
+
+'''
+***********
+README : this is an abbreviated file for the purpose of testing out threadpools
+***********
+
+'''
+
 log = logging.getLogger(__name__)
 
 # Initial logging before proper setup.
@@ -38,6 +51,7 @@ initialize_orders_log()
 
 # Initialize data folders
 initialize_data_folders()
+
 
 
 @click.group()
@@ -88,52 +102,26 @@ def run(ctx):
         with open(ctx.obj['pidfile'], 'w') as fd:
             fd.write(str(os.getpid()))
     try:
-        worker = CoreWorkerInfrastructure(ctx.config)
-        # Set up signalling. do it here as of no relevance to GUI
-        kill_workers = worker_job(worker, lambda: worker.stop(pause=True))
-        # These first two UNIX & Windows
-        signal.signal(signal.SIGTERM, kill_workers)
-        signal.signal(signal.SIGINT, kill_workers)
-        try:
-            # These signals are UNIX-only territory, will ValueError or AttributeError here on Windows (depending on
-            # python version)
-            signal.signal(signal.SIGHUP, kill_workers)
-            # TODO: reload config on SIGUSR1
-            # signal.signal(signal.SIGUSR1, lambda x, y: worker.do_next_tick(worker.reread_config))
-        except (ValueError, AttributeError):
-            log.debug("Cannot set all signals -- not available on this platform")
-        if ctx.obj['systemd']:
-            try:
-                import sdnotify  # A soft dependency on sdnotify -- don't crash on non-systemd systems
-                n = sdnotify.SystemdNotifier()
-                n.notify("READY=1")
-            except BaseException:
-                log.debug("sdnotify not available")
-        worker.run()
+
+        list_of_workers = []
+        print(">>>>>>>> setup core worker infrastructure: >>>>>>>>>>")
+        for worker_name in ctx.config["workers"].items():
+            print("\n >>> looping through ctx.config")
+            single_worker_config = Config.get_worker_config_file(worker_name[0])
+            print(" workers-------------->")
+            print(single_worker_config['workers'])
+            worker = CoreWorkerInfrastructure(single_worker_config)
+            list_of_workers.append(worker)
+
+        print("Total num of workers", len(list_of_workers))
+
+        futures = []
+        with ThreadPoolExecutor(MAX_WORKERS) as executor:
+            for obj in list_of_workers:
+                futures.append(executor.submit(obj.run))
+
     except errors.NoWorkersAvailable:
         sys.exit(70)  # 70= "Software error" in /usr/include/sysexts.h
-    finally:
-        if ctx.obj['pidfile']:
-            helper.remove(ctx.obj['pidfile'])
-
-
-@main.command()
-@click.pass_context
-@configfile
-@chain
-@unlock
-def runservice(ctx):
-    """ Continuously run the worker as a service
-    """
-    if dexbot_service_running():
-        click.echo("Stopping dexbot daemon")
-        os.system('systemctl --user stop dexbot')
-
-    if not os.path.exists(SYSTEMD_SERVICE_NAME):
-        setup_systemd(get_whiptail('DEXBot configure'), {})
-
-    click.echo("Starting dexbot daemon")
-    os.system("systemctl --user start dexbot")
 
 
 @main.command()

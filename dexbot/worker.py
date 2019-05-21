@@ -183,7 +183,6 @@ class WorkerInfrastructure(threading.Thread):
 
     def stop(self, worker_name=None, pause=False):
         """ Used to stop the worker(s)
-
             :param str worker_name: name of the worker to stop
             :param bool pause: optional argument which tells worker if it was stopped or just paused
         """

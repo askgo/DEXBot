@@ -5,7 +5,7 @@ from setuptools import setup, find_packages
 from distutils.command import build as build_module
 
 cmd_class = {}
-console_scripts = ['dexbot-cli = dexbot.cli:main']
+console_scripts = ['dexbot-cli = dexbot.cli:main', 'dexbot-core = dexbot.cli_core:main']
 install_requires = []
 
 

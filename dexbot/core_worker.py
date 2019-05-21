@@ -1,12 +1,9 @@
 import importlib
-import sys
 import logging
-import os.path
 import threading
 import copy
 
 import dexbot.errors as errors
-#from dexbot.strategies.base import StrategyBase
 
 from bitshares.notify import Notify
 from bitshares.instance import shared_bitshares_instance
@@ -17,6 +14,14 @@ log_workers = logging.getLogger('dexbot.per_worker')
 # it returns LogRecords with extra fields: worker_name, account, market and is_disabled
 # is_disabled is a callable returning True if the worker is currently disabled.
 # GUIs can add a handler to this logger to get a stream of events of the running workers.
+
+
+'''
+***********
+README : this is an abbreviated file for the purpose of testing out threadpools
+***********
+
+'''
 
 
 class CoreWorkerInfrastructure(threading.Thread):
@@ -35,8 +40,10 @@ class CoreWorkerInfrastructure(threading.Thread):
         self.view = view
         self.jobs = set()
         self.notify = None
-        self.config_lock = threading.RLock()
+
         self.workers = {}
+        self.worker_name = None
+        self.worker = None
 
         self.accounts = set()
         self.markets = set()
@@ -44,45 +51,37 @@ class CoreWorkerInfrastructure(threading.Thread):
     def init_workers(self, config):
         """ Initialize the workers
         """
-        self.config_lock.acquire()
-        for worker_name, worker in config["workers"].items():
-            if "account" not in worker:
-                log_workers.critical("Worker has no account", extra={
-                    'worker_name': worker_name, 'account': 'unknown',
-                    'market': 'unknown', 'is_disabled': (lambda: True)
-                })
-                continue
-            if "market" not in worker:
-                log_workers.critical("Worker has no market", extra={
-                    'worker_name': worker_name, 'account': worker['account'],
-                    'market': 'unknown', 'is_disabled': (lambda: True)
-                })
-                continue
-            try:
+        try:
+            print("Inside Init CORE WORKER")
+            # handle only one worker
+            for worker_name, worker in config["workers"].items():
+                self.worker_name = worker_name
+                self.worker = worker
+                print("worker name", self.worker_name, "\nworker", self.worker,  sep=":")
+
+            if self.worker_name is not None and self.worker is not None:
                 strategy_class = getattr(
-                    importlib.import_module(worker["module"]),
+                    importlib.import_module(self.worker["module"]),
                     'Strategy'
                 )
-                print("Worker Name", worker_name, sep=":")
-                self.workers[worker_name] = strategy_class(
-                    config=config,
-                    name=worker_name,
+
+                self.workers[self.worker_name] = strategy_class(
+                    config=self.config,
+                    name=self.worker_name,
                     bitshares_instance=self.bitshares,
                     view=self.view
                 )
-                self.markets.add(worker['market'])
-                self.accounts.add(worker['account'])
-            except BaseException:
-                log_workers.exception("Worker initialisation", extra={
-                    'worker_name': worker_name, 'account': worker['account'],
-                    'market': 'unknown', 'is_disabled': (lambda: True)
-                })
-        self.config_lock.release()
+
+                self.markets.add(self.worker['market'])
+                self.accounts.add(self.worker['account'])
+
+        except BaseException:
+            log_workers.exception("Worker initialisation", extra={
+                'worker_name': self.worker_name, 'account': self.worker['account'],
+                'market': 'unknown', 'is_disabled': (lambda: True)
+            })
 
     def update_notify(self):
-        if not self.config['workers']:
-            log.critical("No workers configured to launch, exiting")
-            raise errors.NoWorkersAvailable()
         if not self.workers:
             log.critical("No workers actually running")
             raise errors.NoWorkersAvailable()
@@ -109,61 +108,49 @@ class CoreWorkerInfrastructure(threading.Thread):
             finally:
                 self.jobs = set()
 
-        for worker_name, worker in self.config["workers"].items():
-            if worker_name not in self.workers:
-                continue
-            elif self.workers[worker_name].disabled:
-                self.workers[worker_name].log.error('Worker "{}" is disabled'.format(worker_name))
-                self.workers.pop(worker_name)
-                continue
+        if self.workers[self.worker_name].disabled:
+            self.workers[self.worker_name].log.error('Worker "{}" is disabled'.format(self.worker_name))
+            self.workers.pop(self.worker_name)
+        try:
+            self.workers[self.worker_name].ontick(data)
+        except Exception as e:
+            self.workers[self.worker_name].log.exception("in ontick()")
             try:
-                self.workers[worker_name].ontick(data)
-            except Exception as e:
-                self.workers[worker_name].log.exception("in ontick()")
-                try:
-                    self.workers[worker_name].error_ontick(e)
-                except Exception:
-                    self.workers[worker_name].log.exception("in error_ontick()")
+                self.workers[self.worker_name].error_ontick(e)
+            except Exception:
+                self.workers[self.worker_name].log.exception("in error_ontick()")
 
     def on_market(self, data):
         if data.get("deleted", False):  # No info available on deleted orders
             return
 
-        for worker_name, worker in self.config["workers"].items():
-            if worker_name not in self.workers:
-                continue
-            elif self.workers[worker_name].disabled:
-                self.workers[worker_name].log.error('Worker "{}" is disabled'.format(worker_name))
-                self.workers.pop(worker_name)
-                continue
-            if worker["market"] == data.market:
+        if self.workers[self.worker_name].disabled:
+            self.workers[self.worker_name].log.error('Worker "{}" is disabled'.format(self.worker_name))
+            self.workers.pop(self.worker_name)
+        if self.worker["market"] == data.market:
+            try:
+                self.workers[self.worker_name].onMarketUpdate(data)
+            except Exception as e:
+                self.workers[self.worker_name].log.exception("in onMarketUpdate()")
                 try:
-                    self.workers[worker_name].onMarketUpdate(data)
-                except Exception as e:
-                    self.workers[worker_name].log.exception("in onMarketUpdate()")
-                    try:
-                        self.workers[worker_name].error_onMarketUpdate(e)
-                    except Exception:
-                        self.workers[worker_name].log.exception("in error_onMarketUpdate()")
+                    self.workers[self.worker_name].error_onMarketUpdate(e)
+                except Exception:
+                    self.workers[self.worker_name].log.exception("in error_onMarketUpdate()")
 
     def on_account(self, account_update):
         account = account_update.account
-        for worker_name, worker in self.config["workers"].items():
-            if worker_name not in self.workers:
-                continue
-            elif self.workers[worker_name].disabled:
-                self.workers[worker_name].log.error('Worker "{}" is disabled'.format(worker_name))
-                self.workers.pop(worker_name)
-                continue
-            if worker["account"] == account["name"]:
+        if self.workers[self.worker_name].disabled:
+            self.workers[self.worker_name].log.error('Worker "{}" is disabled'.format(self.worker_name))
+            self.workers.pop(self.worker_name)
+        if self.worker["account"] == account["name"]:
+            try:
+                self.workers[self.worker_name].onAccount(account_update)
+            except Exception as e:
+                self.workers[self.worker_name].log.exception("in onAccountUpdate()")
                 try:
-                    self.workers[worker_name].onAccount(account_update)
-                except Exception as e:
-                    self.workers[worker_name].log.exception("in onAccountUpdate()")
-                    try:
-                        self.workers[worker_name].error_onAccount(e)
-                    except Exception:
-                        self.workers[worker_name].log.exception("in error_onAccountUpdate()")
+                    self.workers[self.worker_name].error_onAccount(e)
+                except Exception:
+                    self.workers[self.worker_name].log.exception("in error_onAccountUpdate()")
 
     def run(self):
         self.init_workers(self.config)
@@ -173,13 +160,12 @@ class CoreWorkerInfrastructure(threading.Thread):
     def remove_market(self, worker_name):
         """ Remove the market only if the worker is the only one using it
         """
-#        with self.config_lock:
         market = self.config['workers'][worker_name]['market']
         for name, worker in self.config['workers'].items():
             if market == worker['market']:
-                break  # Found the same market, do nothing
+                return  # Found the same market, do nothing
             else:
-            # No markets found, safe to remove
+                # No markets found, safe to remove
                 self.markets.remove(market)
 
     def stop(self, worker_name=None, pause=False):
@@ -196,7 +182,6 @@ class CoreWorkerInfrastructure(threading.Thread):
                 # Worker was not found meaning it does not exist or it is paused already
                 return
 
-#            with self.config_lock:
             account = self.config['workers'][worker_name]['account']
             self.config['workers'].pop(worker_name)
 
