@@ -1,12 +1,12 @@
 import importlib
 import logging
-import threading
 import copy
+import threading
 
 import dexbot.errors as errors
-
 from bitshares.notify import Notify
 from bitshares.instance import shared_bitshares_instance
+
 
 log = logging.getLogger(__name__)
 log_workers = logging.getLogger('dexbot.per_worker')
@@ -18,11 +18,9 @@ log_workers = logging.getLogger('dexbot.per_worker')
 
 '''
 ***********
-README : this is an abbreviated file for the purpose of testing out threadpools
+NOTE : this is an abbreviated class for the purpose of testing out threadpools
 ***********
-
 '''
-
 
 class CoreWorkerInfrastructure(threading.Thread):
 
@@ -36,6 +34,8 @@ class CoreWorkerInfrastructure(threading.Thread):
 
         # BitShares instance
         self.bitshares = bitshares_instance or shared_bitshares_instance()
+        self.lock = threading.RLock()
+
         self.config = copy.deepcopy(config)
         self.view = view
         self.jobs = set()
@@ -52,12 +52,13 @@ class CoreWorkerInfrastructure(threading.Thread):
         """ Initialize the workers
         """
         try:
-            print("Inside Init CORE WORKER")
+            log.info("Inside Init CORE WORKER")
             # handle only one worker
             for worker_name, worker in config["workers"].items():
                 self.worker_name = worker_name
                 self.worker = worker
-                print("worker name", self.worker_name, "\nworker", self.worker,  sep=":")
+                log.info(worker_name)
+                # print("worker name", self.worker_name, "\nworker", self.worker,  sep=":")
 
             if self.worker_name is not None and self.worker is not None:
                 strategy_class = getattr(
@@ -107,7 +108,6 @@ class CoreWorkerInfrastructure(threading.Thread):
                     job()
             finally:
                 self.jobs = set()
-
         if self.workers[self.worker_name].disabled:
             self.workers[self.worker_name].log.error('Worker "{}" is disabled'.format(self.worker_name))
             self.workers.pop(self.worker_name)
@@ -181,7 +181,6 @@ class CoreWorkerInfrastructure(threading.Thread):
             except KeyError:
                 # Worker was not found meaning it does not exist or it is paused already
                 return
-
             account = self.config['workers'][worker_name]['account']
             self.config['workers'].pop(worker_name)
 

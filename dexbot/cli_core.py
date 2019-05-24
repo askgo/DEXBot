@@ -31,12 +31,8 @@ import click  # noqa: E402
 from concurrent.futures.thread import ThreadPoolExecutor
 MAX_WORKERS = 20
 
-'''
-***********
-README : this is an abbreviated file for the purpose of testing out threadpools
-***********
-
-'''
+#from bitshares.instance import shared_bitshares_instance
+from bitshares import BitShares
 
 log = logging.getLogger(__name__)
 
@@ -51,7 +47,6 @@ initialize_orders_log()
 
 # Initialize data folders
 initialize_data_folders()
-
 
 
 @click.group()
@@ -97,6 +92,7 @@ def main(ctx, **kwargs):
 @verbose
 def run(ctx):
     """ Continuously run the worker
+     ** NOTE ** : this is an abbreviated cli file for the purpose of testing out threadpools
     """
     if ctx.obj['pidfile']:
         with open(ctx.obj['pidfile'], 'w') as fd:
@@ -104,16 +100,13 @@ def run(ctx):
     try:
 
         list_of_workers = []
-        print(">>>>>>>> setup core worker infrastructure: >>>>>>>>>>")
         for worker_name in ctx.config["workers"].items():
-            print("\n >>> looping through ctx.config")
             single_worker_config = Config.get_worker_config_file(worker_name[0])
-            print(" workers-------------->")
-            print(single_worker_config['workers'])
             worker = CoreWorkerInfrastructure(single_worker_config)
             list_of_workers.append(worker)
 
-        print("Total num of workers", len(list_of_workers))
+        MAX_WORKERS =  len(list_of_workers)
+        print("Total number of workers", MAX_WORKERS)
 
         futures = []
         with ThreadPoolExecutor(MAX_WORKERS) as executor:
@@ -145,10 +138,6 @@ def configure(ctx):
     if config.get('systemd_status', 'disabled') == 'enabled':
         click.echo("Starting dexbot daemon")
         os.system("systemctl --user start dexbot")
-
-
-def worker_job(worker, job):
-    return lambda x, y: worker.do_next_tick(job)
 
 
 if __name__ == '__main__':
