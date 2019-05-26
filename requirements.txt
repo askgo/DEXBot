@@ -8,7 +8,7 @@ requests>=2.20.0
 yarl==1.1.0
 ccxt==1.17.434
 pywaves==0.8.20
-git+https://github.com/thehapax/python-bitshares.git#egg=bitshares
+git+https://github.com/thehapax/python-bitshares.git@master#egg=bitshares
 git+https://github.com/thehapax/python-graphenelib.git#egg=graphenelib
 uptick==0.2.1
 ruamel.yaml>=0.15.37

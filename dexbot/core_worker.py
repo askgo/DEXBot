@@ -72,6 +72,7 @@ class CoreWorkerInfrastructure(threading.Thread):
                     bitshares_instance=self.bitshares,
                     view=self.view
                 )
+                log.info("CORE WORKER: init strategy class: {}".format(self.worker_name))
 
                 self.markets.add(self.worker['market'])
                 self.accounts.add(self.worker['account'])
@@ -83,12 +84,15 @@ class CoreWorkerInfrastructure(threading.Thread):
             })
 
     def update_notify(self):
+        log.info("CORE WORKER: update_notify {}".format(self.worker_name))
         if not self.workers:
             log.critical("No workers actually running")
             raise errors.NoWorkersAvailable()
         if self.notify:
             # Update the notification instance
             self.notify.reset_subscriptions(list(self.accounts), list(self.markets))
+            log.info("CORE WORKER: reset subscriptions ")
+
         else:
             # Initialize the notification instance
             self.notify = Notify(
@@ -99,9 +103,12 @@ class CoreWorkerInfrastructure(threading.Thread):
                 on_block=self.on_block,
                 bitshares_instance=self.bitshares
             )
+            log.info("CORE WORKER: INSTANTIATE NOTIFY CLASS: {}".format(self.worker_name))
 
     # Events
     def on_block(self, data):
+        log.info("CORE WORKER: on_block {}".format(self.worker_name))
+
         if self.jobs:
             try:
                 for job in self.jobs:
@@ -113,8 +120,10 @@ class CoreWorkerInfrastructure(threading.Thread):
             self.workers.pop(self.worker_name)
         try:
             self.workers[self.worker_name].ontick(data)
+            log.info("CORE WORKER: worker.ontick: {}".format(self.worker_name))
+
         except Exception as e:
-            self.workers[self.worker_name].log.exception("in ontick()")
+            self.workers[self.worker_name].log.exception("in ontick() {} ".format(self.worker_name))
             try:
                 self.workers[self.worker_name].error_ontick(e)
             except Exception:
@@ -130,10 +139,14 @@ class CoreWorkerInfrastructure(threading.Thread):
         if self.worker["market"] == data.market:
             try:
                 self.workers[self.worker_name].onMarketUpdate(data)
+                log.info("CORE WORKER: onMarketUpdate: {}".format(self.worker_name))
+
             except Exception as e:
                 self.workers[self.worker_name].log.exception("in onMarketUpdate()")
                 try:
                     self.workers[self.worker_name].error_onMarketUpdate(e)
+                    log.info("CORE WORKER: error onMarketUpdate ")
+
                 except Exception:
                     self.workers[self.worker_name].log.exception("in error_onMarketUpdate()")
 
@@ -145,6 +158,8 @@ class CoreWorkerInfrastructure(threading.Thread):
         if self.worker["account"] == account["name"]:
             try:
                 self.workers[self.worker_name].onAccount(account_update)
+                log.info("CORE WORKER: on Account:{} ".format(self.worker_name))
+
             except Exception as e:
                 self.workers[self.worker_name].log.exception("in onAccountUpdate()")
                 try:
