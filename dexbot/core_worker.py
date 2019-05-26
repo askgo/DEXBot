@@ -34,7 +34,7 @@ class CoreWorkerInfrastructure(threading.Thread):
 
         # BitShares instance
         self.bitshares = bitshares_instance or shared_bitshares_instance()
-        self.lock = threading.RLock()
+        self.event_lock = threading.RLock()
 
         self.config = copy.deepcopy(config)
         self.view = view
@@ -58,7 +58,6 @@ class CoreWorkerInfrastructure(threading.Thread):
                 self.worker_name = worker_name
                 self.worker = worker
                 log.info(worker_name)
-                # print("worker name", self.worker_name, "\nworker", self.worker,  sep=":")
 
             if self.worker_name is not None and self.worker is not None:
                 strategy_class = getattr(
@@ -107,20 +106,20 @@ class CoreWorkerInfrastructure(threading.Thread):
 
     # Events
     def on_block(self, data):
-        log.info("CORE WORKER: on_block {}".format(self.worker_name))
-
         if self.jobs:
             try:
                 for job in self.jobs:
                     job()
             finally:
                 self.jobs = set()
+
+        self.event_lock.acquire()
         if self.workers[self.worker_name].disabled:
             self.workers[self.worker_name].log.error('Worker "{}" is disabled'.format(self.worker_name))
             self.workers.pop(self.worker_name)
         try:
             self.workers[self.worker_name].ontick(data)
-            log.info("CORE WORKER: worker.ontick: {}".format(self.worker_name))
+            log.info("CORE WORKER: ON_BLOCK(),ontick: {}".format(self.worker_name))
 
         except Exception as e:
             self.workers[self.worker_name].log.exception("in ontick() {} ".format(self.worker_name))
@@ -128,11 +127,13 @@ class CoreWorkerInfrastructure(threading.Thread):
                 self.workers[self.worker_name].error_ontick(e)
             except Exception:
                 self.workers[self.worker_name].log.exception("in error_ontick()")
+        self.event_lock.release()
 
     def on_market(self, data):
         if data.get("deleted", False):  # No info available on deleted orders
             return
 
+        self.event_lock.acquire()
         if self.workers[self.worker_name].disabled:
             self.workers[self.worker_name].log.error('Worker "{}" is disabled'.format(self.worker_name))
             self.workers.pop(self.worker_name)
@@ -149,8 +150,10 @@ class CoreWorkerInfrastructure(threading.Thread):
 
                 except Exception:
                     self.workers[self.worker_name].log.exception("in error_onMarketUpdate()")
+        self.event_lock.release()
 
     def on_account(self, account_update):
+        self.event_lock.acquire()
         account = account_update.account
         if self.workers[self.worker_name].disabled:
             self.workers[self.worker_name].log.error('Worker "{}" is disabled'.format(self.worker_name))
@@ -166,6 +169,7 @@ class CoreWorkerInfrastructure(threading.Thread):
                     self.workers[self.worker_name].error_onAccount(e)
                 except Exception:
                     self.workers[self.worker_name].log.exception("in error_onAccountUpdate()")
+        self.event_lock.release()
 
     def run(self):
         self.init_workers(self.config)
@@ -196,8 +200,9 @@ class CoreWorkerInfrastructure(threading.Thread):
             except KeyError:
                 # Worker was not found meaning it does not exist or it is paused already
                 return
-            account = self.config['workers'][worker_name]['account']
-            self.config['workers'].pop(worker_name)
+            with self.event_lock:
+                account = self.config['workers'][worker_name]['account']
+                self.config['workers'].pop(worker_name)
 
             self.accounts.remove(account)
             if pause and worker_name in self.workers:
