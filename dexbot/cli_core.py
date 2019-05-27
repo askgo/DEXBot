@@ -33,10 +33,6 @@ import click  # noqa: E402
 from concurrent.futures.thread import ThreadPoolExecutor
 MAX_WORKERS = 20
 
-import multiprocessing
-from concurrent.futures.process import ProcessPoolExecutor
-import concurrent.futures
-
 
 log = logging.getLogger(__name__)
 
@@ -136,7 +132,6 @@ def runmp(ctx):
         with open(ctx.obj['pidfile'], 'w') as fd:
             fd.write(str(os.getpid()))
     try:
-
         list_of_workers = []
         MAX_WORKERS = len(ctx.config["workers"].items())
         print("Total Number of workers", MAX_WORKERS)

@@ -7,14 +7,12 @@ import dexbot.errors as errors
 from bitshares.notify import Notify
 from bitshares.instance import shared_bitshares_instance
 
-
 log = logging.getLogger(__name__)
 log_workers = logging.getLogger('dexbot.per_worker')
 # NOTE this is the  special logger for per-worker events
 # it returns LogRecords with extra fields: worker_name, account, market and is_disabled
 # is_disabled is a callable returning True if the worker is currently disabled.
 # GUIs can add a handler to this logger to get a stream of events of the running workers.
-
 
 '''
 ***********
@@ -50,6 +48,7 @@ class MPWorkerInfrastructure(multiprocessing.Process):
 
     def init_workers(self, config):
         """ Initialize the workers outside before using run(), a temporary fix
+            Todo: does initialization outside of class affect the GUI?
         """
         try:
             log.info("Inside Init CORE WORKER")
@@ -85,6 +84,7 @@ class MPWorkerInfrastructure(multiprocessing.Process):
     def update_notify(self):
         """
         Add locks here for handling shared resource: bitshares_instance
+        update_notify is part of run() and be stopped/started via gui
         :return: none
         """
         self.event_lock.acquire()
@@ -110,7 +110,18 @@ class MPWorkerInfrastructure(multiprocessing.Process):
             log.info("CORE WORKER: INSTANTIATE NOTIFY CLASS: {}".format(self.worker_name))
         self.event_lock.release()
 
-    # Events
+    def check_disabled(self):
+        """
+        helper method: check if worker is disabled, pop off of worker stack, issue log error
+        :return: None
+        """
+        if self.workers[self.worker_name].disabled:
+            self.workers[self.worker_name].log.error('Worker "{}" is disabled'.format(self.worker_name))
+            self.workers.pop(self.worker_name)
+
+    """
+    Events
+    """
     def on_block(self, data):
         if self.jobs:
             try:
@@ -120,13 +131,10 @@ class MPWorkerInfrastructure(multiprocessing.Process):
                 self.jobs = set()
 
         self.event_lock.acquire()
-        if self.workers[self.worker_name].disabled:
-            self.workers[self.worker_name].log.error('Worker "{}" is disabled'.format(self.worker_name))
-            self.workers.pop(self.worker_name)
+        self.check_disabled()
         try:
             self.workers[self.worker_name].ontick(data)
             log.info("CORE WORKER: ON_BLOCK(),ontick: {}".format(self.worker_name))
-
         except Exception as e:
             self.workers[self.worker_name].log.exception("in ontick() {} ".format(self.worker_name))
             try:
@@ -140,14 +148,11 @@ class MPWorkerInfrastructure(multiprocessing.Process):
             return
 
         self.event_lock.acquire()
-        if self.workers[self.worker_name].disabled:
-            self.workers[self.worker_name].log.error('Worker "{}" is disabled'.format(self.worker_name))
-            self.workers.pop(self.worker_name)
+        self.check_disabled()
         if self.worker["market"] == data.market:
             try:
                 self.workers[self.worker_name].onMarketUpdate(data)
                 log.info("CORE WORKER: onMarketUpdate: {}".format(self.worker_name))
-
             except Exception as e:
                 self.workers[self.worker_name].log.exception("in onMarketUpdate()")
                 try:
@@ -161,15 +166,11 @@ class MPWorkerInfrastructure(multiprocessing.Process):
     def on_account(self, account_update):
         self.event_lock.acquire()
         account = account_update.account
-
-        if self.workers[self.worker_name].disabled:
-            self.workers[self.worker_name].log.error('Worker "{}" is disabled'.format(self.worker_name))
-            self.workers.pop(self.worker_name)
+        self.check_disabled()
         if self.worker["account"] == account["name"]:
             try:
                 self.workers[self.worker_name].onAccount(account_update)
                 log.info("CORE WORKER: on Account:{} ".format(self.worker_name))
-
             except Exception as e:
                 self.workers[self.worker_name].log.exception("in onAccountUpdate()")
                 try:
