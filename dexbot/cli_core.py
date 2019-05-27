@@ -18,6 +18,8 @@ from dexbot.ui import (
     configfile
 )
 from .core_worker import CoreWorkerInfrastructure
+from .mp_worker import MPWorkerInfrastructure
+
 from .cli_conf import configure_dexbot, dexbot_service_running
 from . import errors
 from . import helper
@@ -31,8 +33,10 @@ import click  # noqa: E402
 from concurrent.futures.thread import ThreadPoolExecutor
 MAX_WORKERS = 20
 
-#from bitshares.instance import shared_bitshares_instance
-from bitshares import BitShares
+import multiprocessing
+from concurrent.futures.process import ProcessPoolExecutor
+import concurrent.futures
+
 
 log = logging.getLogger(__name__)
 
@@ -109,6 +113,41 @@ def run(ctx):
         print("Total number of workers", MAX_WORKERS)
 
         futures = []
+        with ThreadPoolExecutor(MAX_WORKERS) as executor:
+            for obj in list_of_workers:
+                futures.append(executor.submit(obj.run))
+
+    except errors.NoWorkersAvailable:
+        sys.exit(70)  # 70= "Software error" in /usr/include/sysexts.h
+
+
+@main.command()
+@click.pass_context
+@configfile
+@chain
+@unlock
+@verbose
+def runmp(ctx):
+    """ Continuously run the worker
+     ** NOTE ** : this is an abbreviated cli file for the purpose of testing out threadpools
+    """
+    if ctx.obj['pidfile']:
+        with open(ctx.obj['pidfile'], 'w') as fd:
+            fd.write(str(os.getpid()))
+    try:
+
+        list_of_workers = []
+        for worker_name in ctx.config["workers"].items():
+            single_worker_config = Config.get_worker_config_file(worker_name[0])
+            worker = MPWorkerInfrastructure(single_worker_config)
+            worker.init_workers(single_worker_config)
+            list_of_workers.append(worker)
+
+        MAX_WORKERS =  len(list_of_workers)
+        print("Total number of workers", MAX_WORKERS)
+
+        futures = []
+        print("Entering ThreadPoolExecutor in coremp")
         with ThreadPoolExecutor(MAX_WORKERS) as executor:
             for obj in list_of_workers:
                 futures.append(executor.submit(obj.run))
