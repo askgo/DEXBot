@@ -18,7 +18,7 @@ log_workers = logging.getLogger('dexbot.per_worker')
 
 '''
 ***********
-NOTE : this is an abbreviated class for the purpose of testing out threadpools
+NOTE : this is an abbreviated class for the purpose of testing out multiprocessing.
 ***********
 '''
 
@@ -49,7 +49,7 @@ class MPWorkerInfrastructure(multiprocessing.Process):
         self.markets = set()
 
     def init_workers(self, config):
-        """ Initialize the workers
+        """ Initialize the workers outside before using run(), a temporary fix
         """
         try:
             log.info("Inside Init CORE WORKER")
@@ -71,7 +71,7 @@ class MPWorkerInfrastructure(multiprocessing.Process):
                     bitshares_instance=self.bitshares,
                     view=self.view
                 )
-                log.info("CORE WORKER: init strategy class: {}".format(self.worker_name))
+                log.info("CORE WORKER: init strategy class complete: {}".format(self.worker_name))
 
                 self.markets.add(self.worker['market'])
                 self.accounts.add(self.worker['account'])
@@ -83,6 +83,10 @@ class MPWorkerInfrastructure(multiprocessing.Process):
             })
 
     def update_notify(self):
+        """
+        Add locks here for handling shared resource: bitshares_instance
+        :return: none
+        """
         self.event_lock.acquire()
         log.info("CORE WORKER: update_notify {}".format(self.worker_name))
         if not self.workers:
@@ -157,6 +161,7 @@ class MPWorkerInfrastructure(multiprocessing.Process):
     def on_account(self, account_update):
         self.event_lock.acquire()
         account = account_update.account
+
         if self.workers[self.worker_name].disabled:
             self.workers[self.worker_name].log.error('Worker "{}" is disabled'.format(self.worker_name))
             self.workers.pop(self.worker_name)
@@ -174,6 +179,10 @@ class MPWorkerInfrastructure(multiprocessing.Process):
         self.event_lock.release()
 
     def run(self):
+        """
+        Use this method to initialize or update bitshares notify and listen for updates.
+        :return: None
+        """
         self.update_notify()
         self.notify.listen()
 

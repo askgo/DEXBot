@@ -130,6 +130,7 @@ def run(ctx):
 def runmp(ctx):
     """ Continuously run the worker
      ** NOTE ** : this is an abbreviated cli file for the purpose of testing out threadpools
+     This method for ThreadPool of Workers, each of which is a Process
     """
     if ctx.obj['pidfile']:
         with open(ctx.obj['pidfile'], 'w') as fd:
@@ -137,14 +138,14 @@ def runmp(ctx):
     try:
 
         list_of_workers = []
+        MAX_WORKERS = len(ctx.config["workers"].items())
+        print("Total Number of workers", MAX_WORKERS)
+
         for worker_name in ctx.config["workers"].items():
             single_worker_config = Config.get_worker_config_file(worker_name[0])
             worker = MPWorkerInfrastructure(single_worker_config)
             worker.init_workers(single_worker_config)
             list_of_workers.append(worker)
-
-        MAX_WORKERS =  len(list_of_workers)
-        print("Total number of workers", MAX_WORKERS)
 
         futures = []
         print("Entering ThreadPoolExecutor in coremp")
