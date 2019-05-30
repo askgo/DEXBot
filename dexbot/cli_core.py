@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 from collections import OrderedDict
+from bitshares.instance import shared_bitshares_instance
 
 import logging
 import os
@@ -28,7 +29,6 @@ from . import helper
 if "LANG" not in os.environ:
     os.environ['LANG'] = 'C.UTF-8'
 import click  # noqa: E402
-
 
 from concurrent.futures.thread import ThreadPoolExecutor
 MAX_WORKERS = 20
@@ -136,9 +136,11 @@ def runmp(ctx):
         MAX_WORKERS = len(ctx.config["workers"].items())
         print("Total Number of workers", MAX_WORKERS)
 
+        bitshares = shared_bitshares_instance()
         for worker_name in ctx.config["workers"].items():
             single_worker_config = Config.get_worker_config_file(worker_name[0])
-            worker = MPWorkerInfrastructure(single_worker_config)
+            # print(single_worker_config)
+            worker = MPWorkerInfrastructure(single_worker_config, bitshares_instance=bitshares)
             worker.init_workers(single_worker_config)
             list_of_workers.append(worker)
 

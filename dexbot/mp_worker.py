@@ -50,6 +50,7 @@ class MPWorkerInfrastructure(multiprocessing.Process):
         """ Initialize the workers outside before using run(), a temporary fix
             Todo: does initialization outside of class affect the GUI?
         """
+        self.event_lock.acquire()
         try:
             log.info("Inside Init CORE WORKER")
             # handle only one worker
@@ -80,6 +81,8 @@ class MPWorkerInfrastructure(multiprocessing.Process):
                 'worker_name': self.worker_name, 'account': self.worker['account'],
                 'market': 'unknown', 'is_disabled': (lambda: True)
             })
+        self.event_lock.release()
+
 
     def update_notify(self):
         """

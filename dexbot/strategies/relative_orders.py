@@ -110,6 +110,7 @@ class Strategy(StrategyBase):
             self.log.info('"Reset orders on center price change" is active, placing fresh orders')
             self.update_orders()
         else:
+            self.log.info('"Check Orders" in relative orders')
             self.check_orders()
 
     def error(self, *args, **kwargs):

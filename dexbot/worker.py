@@ -44,6 +44,7 @@ class WorkerInfrastructure(threading.Thread):
     def init_workers(self, config):
         """ Initialize the workers
         """
+        log.info("Inside Init WORKER")
         self.config_lock.acquire()
         for worker_name, worker in config["workers"].items():
             if "account" not in worker:
@@ -69,6 +70,7 @@ class WorkerInfrastructure(threading.Thread):
                     bitshares_instance=self.bitshares,
                     view=self.view
                 )
+                log.info("WORKER: init strategy class complete: {}".format(worker_name))
                 self.markets.add(worker['market'])
                 self.accounts.add(worker['account'])
             except BaseException:
@@ -79,6 +81,7 @@ class WorkerInfrastructure(threading.Thread):
         self.config_lock.release()
 
     def update_notify(self):
+        log.info(" WORKER: update_notify ")
         if not self.config['workers']:
             log.critical("No workers configured to launch, exiting")
             raise errors.NoWorkersAvailable()
@@ -88,6 +91,8 @@ class WorkerInfrastructure(threading.Thread):
         if self.notify:
             # Update the notification instance
             self.notify.reset_subscriptions(list(self.accounts), list(self.markets))
+            log.info(" WORKER: reset subscriptions ")
+
         else:
             # Initialize the notification instance
             self.notify = Notify(
@@ -98,6 +103,19 @@ class WorkerInfrastructure(threading.Thread):
                 on_block=self.on_block,
                 bitshares_instance=self.bitshares
             )
+            log.info(" WORKER: INSTANTIATE NOTIFY CLASS: ")
+
+    def check_disabled(self, worker_name):
+        """
+        helper method: check if worker is disabled, pop off of worker stack, issue log error
+        :return: None
+        """
+        if worker_name not in self.workers:
+            continue
+        elif self.workers[worker_name].disabled:
+            self.workers[worker_name].log.error('Worker "{}" is disabled'.format(worker_name))
+            self.workers.pop(worker_name)
+            continue
 
     # Events
     def on_block(self, data):
@@ -110,14 +128,10 @@ class WorkerInfrastructure(threading.Thread):
 
         self.config_lock.acquire()
         for worker_name, worker in self.config["workers"].items():
-            if worker_name not in self.workers:
-                continue
-            elif self.workers[worker_name].disabled:
-                self.workers[worker_name].log.error('Worker "{}" is disabled'.format(worker_name))
-                self.workers.pop(worker_name)
-                continue
+            self.check_disabled()
             try:
                 self.workers[worker_name].ontick(data)
+                log.info(" WORKER: ON_BLOCK(),ontick: {}".format(worker_name))
             except Exception as e:
                 self.workers[worker_name].log.exception("in ontick()")
                 try:
@@ -129,15 +143,9 @@ class WorkerInfrastructure(threading.Thread):
     def on_market(self, data):
         if data.get("deleted", False):  # No info available on deleted orders
             return
-
         self.config_lock.acquire()
         for worker_name, worker in self.config["workers"].items():
-            if worker_name not in self.workers:
-                continue
-            elif self.workers[worker_name].disabled:
-                self.workers[worker_name].log.error('Worker "{}" is disabled'.format(worker_name))
-                self.workers.pop(worker_name)
-                continue
+            self.check_disabled()
             if worker["market"] == data.market:
                 try:
                     self.workers[worker_name].onMarketUpdate(data)
@@ -145,6 +153,7 @@ class WorkerInfrastructure(threading.Thread):
                     self.workers[worker_name].log.exception("in onMarketUpdate()")
                     try:
                         self.workers[worker_name].error_onMarketUpdate(e)
+                        log.info(" WORKER: onMarketUpdate: {}".format(worker_name))
                     except Exception:
                         self.workers[worker_name].log.exception("in error_onMarketUpdate()")
         self.config_lock.release()
@@ -153,15 +162,11 @@ class WorkerInfrastructure(threading.Thread):
         self.config_lock.acquire()
         account = account_update.account
         for worker_name, worker in self.config["workers"].items():
-            if worker_name not in self.workers:
-                continue
-            elif self.workers[worker_name].disabled:
-                self.workers[worker_name].log.error('Worker "{}" is disabled'.format(worker_name))
-                self.workers.pop(worker_name)
-                continue
+            self.check_disabled()
             if worker["account"] == account["name"]:
                 try:
                     self.workers[worker_name].onAccount(account_update)
+                    log.info(" WORKER: on Account:{} ".format(worker_name))
                 except Exception as e:
                     self.workers[worker_name].log.exception("in onAccountUpdate()")
                     try:
