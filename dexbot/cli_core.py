@@ -31,6 +31,8 @@ if "LANG" not in os.environ:
 import click  # noqa: E402
 
 from concurrent.futures.thread import ThreadPoolExecutor
+import multiprocessing
+
 MAX_WORKERS = 20
 
 
@@ -47,6 +49,11 @@ initialize_orders_log()
 
 # Initialize data folders
 initialize_data_folders()
+
+def set_global_session():
+    global bitshares
+    if not bitshares:
+        bitshares = shared_bitshares_instance()
 
 
 @click.group()
@@ -98,7 +105,6 @@ def run(ctx):
         with open(ctx.obj['pidfile'], 'w') as fd:
             fd.write(str(os.getpid()))
     try:
-
         list_of_workers = []
         for worker_name in ctx.config["workers"].items():
             single_worker_config = Config.get_worker_config_file(worker_name[0])
@@ -108,10 +114,10 @@ def run(ctx):
         MAX_WORKERS =  len(list_of_workers)
         print("Total number of workers", MAX_WORKERS)
 
-        futures = []
-        with ThreadPoolExecutor(MAX_WORKERS) as executor:
+        print("Entering MP PoolExecutor in coremp")
+        with multiprocessing.Pool(initializer=set_global_session) as pool:
             for obj in list_of_workers:
-                futures.append(executor.submit(obj.run))
+                pool.submit(obj.run)
 
     except errors.NoWorkersAvailable:
         sys.exit(70)  # 70= "Software error" in /usr/include/sysexts.h
@@ -144,11 +150,6 @@ def runmp(ctx):
             worker.init_workers(single_worker_config)
             list_of_workers.append(worker)
 
-        futures = []
-        print("Entering ThreadPoolExecutor in coremp")
-        with ThreadPoolExecutor(MAX_WORKERS) as executor:
-            for obj in list_of_workers:
-                futures.append(executor.submit(obj.run))
 
     except errors.NoWorkersAvailable:
         sys.exit(70)  # 70= "Software error" in /usr/include/sysexts.h
