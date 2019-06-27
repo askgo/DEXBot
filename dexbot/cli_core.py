@@ -124,15 +124,16 @@ def run(ctx):
         print("Total number of workers", MAX_WORKERS)
 
         print("Entering MP PoolExecutor in core run")
+        to_do = []
+
         with ProcessPoolExecutor(initializer=set_global_session) as pool:
-            to_do = []
             for obj in list_of_workers:
                 future_result = pool.submit(obj.run)
                 to_do.append(future_result)
 
         for future in futures.as_completed(to_do):
             res = future.result()
-        print('Future result'.format(res)
+            print('Future result', res, sep='')
 
     except errors.NoWorkersAvailable:
         sys.exit(70)  # 70= "Software error" in /usr/include/sysexts.h
