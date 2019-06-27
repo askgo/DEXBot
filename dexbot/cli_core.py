@@ -126,7 +126,7 @@ def run(ctx):
         print("Entering MP PoolExecutor in core run")
         to_do = []
 
-        with ProcessPoolExecutor(initializer=set_global_session) as pool:
+        with ThreadPoolExecutor(initializer=set_global_session) as pool:
             for obj in list_of_workers:
                 future_result = pool.submit(obj.run)
                 to_do.append(future_result)
