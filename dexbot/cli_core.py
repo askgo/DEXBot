@@ -30,8 +30,11 @@ if "LANG" not in os.environ:
     os.environ['LANG'] = 'C.UTF-8'
 import click  # noqa: E402
 
+from concurrent import futures
 from concurrent.futures.thread import ThreadPoolExecutor
 import multiprocessing
+
+from concurrent.futures.process import ProcessPoolExecutor
 
 MAX_WORKERS = 20
 
@@ -49,6 +52,8 @@ initialize_orders_log()
 
 # Initialize data folders
 initialize_data_folders()
+
+bitshares = None
 
 def set_global_session():
     global bitshares
@@ -101,10 +106,14 @@ def run(ctx):
     """ Continuously run the worker
      ** NOTE ** : this is an abbreviated cli file for the purpose of testing out threadpools
     """
+    print("THIS IS A DEXBOT CLI-CORE RUN")
+
     if ctx.obj['pidfile']:
         with open(ctx.obj['pidfile'], 'w') as fd:
             fd.write(str(os.getpid()))
     try:
+        log.info("Running Dexbot multiprocessing")
+
         list_of_workers = []
         for worker_name in ctx.config["workers"].items():
             single_worker_config = Config.get_worker_config_file(worker_name[0])
@@ -113,14 +122,21 @@ def run(ctx):
 
         MAX_WORKERS =  len(list_of_workers)
         print("Total number of workers", MAX_WORKERS)
-
-        print("Entering MP PoolExecutor in coremp")
-        with multiprocessing.Pool(initializer=set_global_session) as pool:
+        
+        print("Entering MP PoolExecutor in core run")
+        with ProcessPoolExecutor(initializer=set_global_session) as pool:
+            to_do = []
             for obj in list_of_workers:
-                pool.submit(obj.run)
+                future_result = pool.submit(obj.run)
+                to_do.append(future_result)
+
+        for future in futures.as_completed(to_do):
+            res = future.result()
+        print('{:.1f} KB'.format(res / 2 ** 10))
 
     except errors.NoWorkersAvailable:
         sys.exit(70)  # 70= "Software error" in /usr/include/sysexts.h
+
 
 
 @main.command()
