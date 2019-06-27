@@ -122,7 +122,7 @@ def run(ctx):
 
         MAX_WORKERS =  len(list_of_workers)
         print("Total number of workers", MAX_WORKERS)
-        
+
         print("Entering MP PoolExecutor in core run")
         with ProcessPoolExecutor(initializer=set_global_session) as pool:
             to_do = []
@@ -132,7 +132,7 @@ def run(ctx):
 
         for future in futures.as_completed(to_do):
             res = future.result()
-        print('{:.1f} KB'.format(res / 2 ** 10))
+        print('Future result'.format(res)
 
     except errors.NoWorkersAvailable:
         sys.exit(70)  # 70= "Software error" in /usr/include/sysexts.h
@@ -165,7 +165,6 @@ def runmp(ctx):
             worker = MPWorkerInfrastructure(single_worker_config, bitshares_instance=bitshares)
             worker.init_workers(single_worker_config)
             list_of_workers.append(worker)
-
 
     except errors.NoWorkersAvailable:
         sys.exit(70)  # 70= "Software error" in /usr/include/sysexts.h
