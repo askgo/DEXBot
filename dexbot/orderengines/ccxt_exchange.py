@@ -25,7 +25,8 @@ class CcxtExchange:
         return has_df
 
     def fetch_trading_fees(self, symbol:str=None):
-        return self.exchange.fetch_trading_fees(symbol=symbol, {})
+        #return self.exchange.fetch_trading_fees(symbol=symbol, {})
+        return self.exchange.fetch_trading_fees({})
 
     def fetch_open_orders(self, symbol: str = None):
         return self.exchange.fetch_open_orders(symbol=symbol)
