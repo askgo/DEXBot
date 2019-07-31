@@ -2,16 +2,28 @@ import asyncio
 import logging
 
 from ccxt import ExchangeError
-
 from model.longtrade import LongTrade
 from model.shorttrade import ShortTrade
+from dexbot.storage import Storage
 
 
-class CcxtOrderEngine:
+class CcxtOrderEngine(Storage):
+    """
+    A strategy using the CCXTOrderEngine can have more than one ccxt exchange.
+    We need to instantiate all the exchanges used in the strategy by the .ini
+    configuration file. Then execute the orders through the exchange(s) based on
+    the strategy layer which instantiates and instance of the CCXTOrderEngine
+    """
 
     def __init__(self, exchange, check_timeout: int = 15):
         self.check_timeout = check_timeout
         self.exchange = exchange
+
+        self.orders_log = logging.LoggerAdapter(logging.getLogger('dexbot.orders_log'), {})
+        self.name = 'Ccxt_Order_Engine'
+
+        # Storage
+        Storage.__init__(self, self.name)
 
     async def execute_trade(self, trade):
         if isinstance(trade, ShortTrade):
@@ -51,7 +63,7 @@ class CcxtOrderEngine:
         order = self.exchange.create_sell_order(symbol, amount, sell_price)
 
         await self._wait_order_complete(order.id)
-        logging.info(f'Completed long trade: {amount} of {symbol}. Bought at {buy_price} and sold at {sell_price}')
+        logging.info(f'Completed long trade: {amount} of {symbol}. Bought at{buy_price} and sold at {sell_price}')
 
     async def _wait_order_complete(self, order_id):
         status = 'open'
