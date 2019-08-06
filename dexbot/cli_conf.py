@@ -287,7 +287,7 @@ def configure_dexbot(config, ctx):
         while True:
             txt = whiptail.prompt("Your name for the worker")
             if len(txt) == 0:
-                whiptail.alert("Worker name cannot be blank. ")
+                whiptail.alert("Worker name cannot be blank. Please give the worker a name.")
             else:
                 config['workers'] = {txt: configure_worker(whiptail, {}, bitshares_instance)}
                 if not whiptail.confirm("Set up another worker?\n(DEXBot can run multiple workers in one instance)"):
