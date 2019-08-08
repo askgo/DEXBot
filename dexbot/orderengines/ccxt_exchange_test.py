@@ -9,10 +9,8 @@ from ccxt_engine import CcxtOrderEngine
 """
     Temporary informal unit test for ccxt exchange
 """
-
 # update this to reflect your config file
 config_file = "ccxt_config/secrets_test.ini"
-
 
 if __name__ == '__main__':
 
@@ -25,7 +23,6 @@ if __name__ == '__main__':
 
     symbol = 'BTC/USDT'
     log.info("symbol: {} ".format(symbol))
-
 
     config_dir = os.path.dirname(__file__)
     parser = configparser.ConfigParser()
@@ -40,8 +37,8 @@ if __name__ == '__main__':
     exch_name = list(sec)[0]
     apikey = sec[exch_name]['api_key']
     secret = sec[exch_name]['secret']
-    log.info(apikey)
-    log.info(secret)
+    log.info(f"API Key:  {apikey}")
+    log.info(f"SECRET: {secret})")
 
     # coin tiger requires an API key, even if only for ticker data
     ccxt_ex = getattr(ccxt, exch_name)({
@@ -52,34 +49,30 @@ if __name__ == '__main__':
         'verbose': False,
     })
 
-    log.info(ccxt_ex.fetch_ticker(symbol))
+    log.info(f"Fetch Ticker for {symbol} : {ccxt_ex.fetch_ticker(symbol)}\n")
 
     cx = CcxtExchange(exchange=ccxt_ex)
     trade_executor = CcxtOrderEngine(cx)
 
-    print()
-    print(list(cx.method_list))
-
-    print()
-    print(cx.free_balance)
-
-    print(f"fetch my trades {symbol}")
-    print(cx.fetch_my_trades(symbol))
+    log.info(f"Available Methods from ccxt for this exchange {list(cx.method_list)}\n")
+    log.info(f"Available Free Balance: {cx.free_balance}\n")
+    log.info(f"Fetch my trades {symbol}: Trades: {cx.fetch_my_trades(symbol)}\n")
 
     one_day = 24 * 60 * 60 * 1000  # in milliseconds
     since = cx.exchange.milliseconds() - one_day  # last 24 hours in milliseconds
     to = since + one_day
-    print(since)
+    log.info(since)
 
-    print(f"fetch closed orders {symbol}")
-    print(cx.fetch_closed_orders(symbol, since))
+    log.info(f"fetch closed orders for {symbol}: {cx.fetch_closed_orders(symbol, since)}\n")
 
     if cx.method_list['fetchClosedOrders']:
         all_orders = cx.get_all_closed_orders_since_to(symbol, since, to)
-        print(all_orders)
+        log.info(f"Fetching All closed Orders for {symbol} since {since} to {to} \n")
+        log.info(all_orders)
 
-    print()
-    print(cx.fetch_l2_order_book(symbol))
+    l2 = cx.fetch_l2_order_book(symbol)
+    log.info(f"Fetching L2 Order Book: {cx.fetch_l2_order_book(symbol)}\n")
 
-    print()
-    print(cx.fetch_order_book(symbol))
+    log.info(f"Fetching Order Book: {cx.fetch_order_book(symbol)}\n")
+
+
