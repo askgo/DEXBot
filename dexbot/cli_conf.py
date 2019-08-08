@@ -390,7 +390,7 @@ def configure_dexbot(config, ctx):
                     items=select_choice(config['node'][0],
                                         [(index, index) for index in config['node']]))
                 config['node'].remove(choice)
-                # delete node permanently from config
+                # Delete node permanently from config
                 setup_systemd(whiptail, config)
             elif action == 'HELP':
                 whiptail.alert("Please see https://github.com/Codaone/DEXBot/wiki")
