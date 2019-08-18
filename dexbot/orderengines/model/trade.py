@@ -1,8 +1,11 @@
 import abc
 
-
 class Trade(metaclass=abc.ABCMeta):
-    def __init__(self, start_price: float, symbol: str, amount: float, currency: str = "USD"):
+    def __init__(self,
+                 start_price: float,
+                 symbol: str,
+                 amount: float,
+                 currency: str = "USD"):
         self.start_price = start_price
         self.symbol = symbol.upper()
         self.amount = amount
@@ -17,6 +20,11 @@ class Trade(metaclass=abc.ABCMeta):
     def exit_price(self):
         pass
 
+    @property
+    @abc.abstractmethod
+    def stop_loss(self):
+        pass
+
     def __str__(self) -> str:
         return f"order for {self.amount} {self.exchange_symbol} with enter price: {self.start_price:.5}, " \
-               f"exit_price: {self.exit_price:.5}"
+               f"exit_price: {self.exit_price:.5} and stop_loss : { self.stop_loss:.5}"
