@@ -315,6 +315,7 @@ def configure_dexbot(config, ctx):
                  ('NODES', 'Edit Node Selection'),
                  ('ADD_NODE', 'Add Your Node'),
                  ('SORT_NODES', 'By latency (uses default list)'),
+                 ('DEL_NODE', 'Delete A Node'),
                  ('HELP', 'Where to get help'),
                  ('EXIT', 'Quit this application')])
 
@@ -387,10 +388,16 @@ def configure_dexbot(config, ctx):
                 setup_systemd(whiptail, config)
             elif action == 'SORT_NODES':
                 nodelist = config['node']
-                sorted_nodes = get_sorted_nodelist(nodelist)
+                sorted_nodes = get_sorted_nodelist(nodelist, 2.0)
                 config['node'] = sorted_nodes
+            elif action == 'DEL_NODE':
+                choice = whiptail.node_radiolist(
+                    msg="Choose node to delete",
+                    items=select_choice(config['node'][0],
+                                        [(index, index) for index in config['node']]))
+                config['node'].remove(choice)
+                # delete node permanently from config
                 setup_systemd(whiptail, config)
-
             elif action == 'HELP':
                 whiptail.alert("Please see https://github.com/Codaone/DEXBot/wiki")
 

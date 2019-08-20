@@ -15,7 +15,7 @@ from bitshares.exceptions import WrongMasterPasswordException
 
 from dexbot import VERSION, APP_NAME, AUTHOR
 from dexbot.config import Config
-from dexbot.node_manager import get_sorted_nodelist
+from dexbot.node_manager import get_sorted_nodelist, ping
 
 log = logging.getLogger(__name__)
 
@@ -54,19 +54,22 @@ def verbose(f):
             # By default, log to a user data dir
             data_dir = user_data_dir(APP_NAME, AUTHOR)
             filename = os.path.join(data_dir, 'dexbot.log')
-        # Print logfile using main logger
-        logging.getLogger("dexbot").info('Dexbot version {}, logfile: {}'.format(VERSION, filename))
 
         fh = logging.FileHandler(filename)
         fh.setFormatter(formatter2)
         logger.addHandler(fh)
 
         logger.propagate = False  # Don't double up with root logger
-        # Set the root logger with basic format
+        # Configure root logger
+        root_logger = logging.getLogger("dexbot")
         ch = logging.StreamHandler()
         ch.setFormatter(formatter1)
-        logging.getLogger("dexbot").addHandler(ch)
+        root_logger.addHandler(ch)
+        root_logger.setLevel(getattr(logging, verbosity.upper()))
         logging.getLogger("").handlers = []
+
+        # Print logfile using main logger
+        root_logger.info('Dexbot version {}, logfile: {}'.format(VERSION, filename))
 
         # GrapheneAPI logging
         if ctx.obj["verbose"] > 4:
@@ -92,9 +95,20 @@ def verbose(f):
 def chain(f):
     @click.pass_context
     def new_func(ctx, *args, **kwargs):
-        click.echo("Checking for nearest nodes....")
-        nodelist = get_sorted_nodelist(ctx.config["node"])
-        click.echo("Nearest node ->  " + nodelist[0])
+        nodelist = ctx.config["node"]
+        timeout = int(ctx.obj.get("sortnodes"))
+
+        host_ip = '8.8.8.8'
+        if ping(host_ip, 3) is False:
+            click.echo("internet NOT available! Please check your connection!")
+            log.critical("Internet not available, exiting")
+            sys.exit(78)
+
+        if timeout > 0:
+            click.echo("Checking for nearest nodes with timeout < {} sec....".format(timeout))
+            nodelist = get_sorted_nodelist(ctx.config["node"], timeout)
+            click.echo("Nearest nodes ->  " + str(nodelist))
+
         ctx.bitshares = BitShares(
             nodelist,
             num_retries=-1,
@@ -159,7 +173,7 @@ def priceChange(new, old):
     if float(old) == 0.0:
         return -1
     else:
-        percent = ((float(new) - float(old))) / float(old) * 100
+        percent = (float(new) - float(old)) / float(old) * 100
         if percent >= 0:
             return click.style("%.2f" % percent, fg="green")
         else:
