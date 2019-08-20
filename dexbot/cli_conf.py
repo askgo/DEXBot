@@ -41,6 +41,9 @@ STRATEGIES = [
     {'tag': 'koth',
      'class': 'dexbot.strategies.king_of_the_hill',
      'name': 'King of the Hill'},
+    {'tag': 'simplearb',
+     'class': 'dexbot.strategies.simple_arbitrage',
+     'name': 'Simple Arbitrage'},
 ]
 
 # Todo: tags must be unique. Are they really a tags?

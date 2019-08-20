@@ -11,6 +11,7 @@ hiddenimports_strategies = [
     'dexbot.strategies.relative_orders',
     'dexbot.strategies.staggered_orders',
     'dexbot.strategies.king_of_the_hill',
+    'dexbot.strategies.simple_arbitrage'
     'dexbot.strategies.storagedemo',
     'dexbot.strategies.walls',
 ]

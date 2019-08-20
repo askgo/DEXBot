@@ -64,6 +64,7 @@ class CcxtExchange:
         except ccxt.BaseError as e:
             self.log.exception("fetch_trading_fees exception {}".format(str(e)))
             raise e
+            return None
 
     def fetch_open_orders(self, symbol: str = None):
         """
