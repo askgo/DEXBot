@@ -457,8 +457,7 @@ def list_accounts(bitshares_instance):
         :return: list of tuples (int, 'account_name - key_type')
     """
     accounts = []
-#    pubkeys = bitshares_instance.wallet.getPublicKeys(current=True)
-    pubkeys = bitshares_instance.wallet.getPublicKeys()
+    pubkeys = bitshares_instance.wallet.getPublicKeys(current=True)
 
     for pubkey in pubkeys:
         account_ids = bitshares_instance.wallet.getAccountsFromPublicKey(pubkey)
