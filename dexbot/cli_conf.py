@@ -41,6 +41,9 @@ STRATEGIES = [
     {'tag': 'koth',
      'class': 'dexbot.strategies.king_of_the_hill',
      'name': 'King of the Hill'},
+    {'tag': 'simplearb',
+     'class': 'dexbot.strategies.simple_arbitrage',
+     'name': 'Simple Arbitrage'},
 ]
 
 # Todo: tags must be unique. Are they really a tags?
@@ -454,7 +457,8 @@ def list_accounts(bitshares_instance):
         :return: list of tuples (int, 'account_name - key_type')
     """
     accounts = []
-    pubkeys = bitshares_instance.wallet.getPublicKeys(current=True)
+#    pubkeys = bitshares_instance.wallet.getPublicKeys(current=True)
+    pubkeys = bitshares_instance.wallet.getPublicKeys()
 
     for pubkey in pubkeys:
         account_ids = bitshares_instance.wallet.getAccountsFromPublicKey(pubkey)
