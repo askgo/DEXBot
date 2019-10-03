@@ -5,7 +5,8 @@ import logging
 import multiprocessing as mp
 import subprocess
 import platform
-
+import socket
+import sys
 
 log = logging.getLogger(__name__)
 
@@ -15,7 +16,29 @@ logging.basicConfig(
 )
 
 max_timeout = 2.0  # default ping time is set to 2s. use for internal testing.
-host_ip = '8.8.8.8'  # default host to ping to check internet
+
+
+def ping_addr(hostname):
+    """ open a socket and test connection
+    """
+    # default port for socket
+    port = 80
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    except socket.error as err:
+        log.info("socket creation failed with error %s" % err)
+
+    try:
+        host_ip = socket.gethostbyname(hostname)
+        # connecting to the server
+        s.connect((host_ip, port)) # add time out?
+        s.close()
+        return True
+    except socket.gaierror:
+        # this means could not resolve the host
+        log.info("Please check your internet connection, error resolving host")
+        sys.exit()
+        return False
 
 
 def ping(host, network_timeout=3):
