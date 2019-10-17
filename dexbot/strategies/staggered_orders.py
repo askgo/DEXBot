@@ -1,5 +1,6 @@
 import time
 import math
+import uuid
 import bitsharesapi.exceptions
 from datetime import datetime, timedelta
 from functools import reduce
@@ -65,8 +66,6 @@ class Strategy(StrategyBase):
             self.disabled = True
 
         # Strategy variables
-        # Assume we are in bootstrap mode by default. This prevents weird things when bootstrap was interrupted
-        self.bootstrapping = True
         self.market_center_price = None
         self.old_center_price = None
         self.buy_orders = []
@@ -85,7 +84,6 @@ class Strategy(StrategyBase):
         self.quote_asset_threshold = 0
         self.base_asset_threshold = 0
         self.min_increase_factor = 1.05
-        self.mountain_max_increase_mode = False
         # Initial balance history elements should not be equal to avoid immediate bootstrap turn off
         self.quote_balance_history = [1, 2, 3]
         self.base_balance_history = [1, 2, 3]
@@ -110,6 +108,9 @@ class Strategy(StrategyBase):
         self.min_check_interval = 1
         self.max_check_interval = 120
         self.current_check_interval = self.min_check_interval
+
+        # If no bootstrap state is recorded, assume we're in bootstrap
+        self.get('bootstrapping', True)
 
         if self.view:
             self.update_gui_profit()
@@ -153,10 +154,6 @@ class Strategy(StrategyBase):
         # Store balance entry for profit estimation if needed
         self.store_profit_estimation_data()
 
-        # Calculate minimal orders amounts based on asset precision
-        if not self.order_min_base or not self.order_min_quote:
-            self.calculate_min_amounts()
-
         # Calculate asset thresholds once
         if not self.quote_asset_threshold or not self.base_asset_threshold:
             self.calculate_asset_thresholds()
@@ -177,46 +174,12 @@ class Strategy(StrategyBase):
                 self.log_maintenance_time()
                 return
 
-        # Replace excessive real orders with virtual ones, buy side
-        if self.real_buy_orders and len(self.real_buy_orders) > self.operational_depth + 5:
-            # Note: replace should happen only if next order is same-sized. Otherwise it will break proper allocation
-            test_order = self.place_further_order('base', self.real_buy_orders[-2], place_order=False)
-            diff = abs(test_order['amount'] - self.real_buy_orders[-1]['quote']['amount'])
-            if diff <= self.order_min_quote:
-                self.replace_real_order_with_virtual(self.real_buy_orders[-1])
-                # Orders needs to be refreshed to avoid races
-                self.refresh_orders()
+        # Ensure proper operational depth
+        self.check_operational_depth(self.real_buy_orders, self.virtual_buy_orders)
+        self.check_operational_depth(self.real_sell_orders, self.virtual_sell_orders)
 
-        # Replace excessive real orders with virtual ones, sell side
-        if self.real_sell_orders and len(self.real_sell_orders) > self.operational_depth + 5:
-            test_order = self.place_further_order('quote', self.real_sell_orders[-2], place_order=False)
-            diff = abs(test_order['amount'] - self.real_sell_orders[-1]['base']['amount'])
-            if diff <= self.order_min_quote:
-                self.replace_real_order_with_virtual(self.real_sell_orders[-1])
-                self.refresh_orders()
-
-        # Check for operational depth, buy side
-        if (self.virtual_buy_orders and
-                len(self.real_buy_orders) < self.operational_depth and
-                not self.bootstrapping):
-            """
-                Note: if boostrap is on and there is nothing to allocate, this check would not work until some orders
-                will be filled. This means that changing `operational_depth` config param will not work immediately.
-
-                We need to wait until bootstrap is off because during initial orders placement this would start to place
-                real orders without waiting until all range will be covered.
-            """
-            self.replace_virtual_order_with_real(self.virtual_buy_orders[0])
-            self.log_maintenance_time()
-            return
-
-        # Check for operational depth, sell side
-        if (self.virtual_sell_orders and
-                len(self.real_sell_orders) < self.operational_depth and
-                not self.bootstrapping):
-            self.replace_virtual_order_with_real(self.virtual_sell_orders[0])
-            self.log_maintenance_time()
-            return
+        # Remember current boostrapping state before sending transactions
+        previous_bootstrap_state = self['bootstrapping']
 
         # Prepare to bundle operations into single transaction
         self.bitshares.bundle = True
@@ -247,6 +210,9 @@ class Strategy(StrategyBase):
                     return
                 else:
                     raise
+            self.refresh_orders()
+            self.sync_current_orders()
+
         self.bitshares.bundle = False
 
         # Maintain the history of free balances after maintenance runs.
@@ -275,8 +241,12 @@ class Strategy(StrategyBase):
                            'balances'.format(self.min_check_interval))
             self.current_check_interval = self.min_check_interval
 
+        if previous_bootstrap_state is True and self['bootstrapping'] is False:
+            # Bootstrap was turned off, dump initial orders
+            self.dump_initial_orders()
+
         # Do not continue whether balances are changing or bootstrap is on
-        if (self.bootstrapping or
+        if (self['bootstrapping'] or
                 self.base_balance_history[0] != self.base_balance_history[2] or
                 self.quote_balance_history[0] != self.quote_balance_history[2] or
                 trx_executed):
@@ -407,15 +377,53 @@ class Strategy(StrategyBase):
         self.virtual_sell_orders = self.filter_sell_orders(self.virtual_orders, sort='DESC', invert=False)
 
         # Sort real orders
+        # (order with index 0 is closest to the center price and -1 is furthers)
         self.real_buy_orders = self.filter_buy_orders(orders, sort='DESC')
         self.real_sell_orders = self.filter_sell_orders(orders, sort='DESC', invert=False)
 
-        # Concatenate orders and virtual_orders
-        orders = orders + self.virtual_orders
+        # Concatenate real orders and virtual_orders
+        self.buy_orders = self.real_buy_orders + self.virtual_buy_orders
+        self.sell_orders = self.real_sell_orders + self.virtual_sell_orders
 
-        # Sort orders so that order with index 0 is closest to the center price and -1 is furthers
-        self.buy_orders = self.filter_buy_orders(orders, sort='DESC')
-        self.sell_orders = self.filter_sell_orders(orders, sort='DESC', invert=False)
+    def sync_current_orders(self):
+        """ Sync current orders to the db
+        """
+        current_real_orders = self.real_buy_orders + self.real_sell_orders
+        current_all_orders = self.buy_orders + self.sell_orders
+        current_real_ids = set([order['id'] for order in current_real_orders])
+        current_all_ids = set([order['id'] for order in current_all_orders])
+        stored_ids = set(self.fetch_orders_extended(custom='current', return_ids_only=True))
+        # We need to remove both virtual and real orders
+        to_remove_ids = stored_ids.difference(current_all_ids)
+        # We need to add only real orders ids because virtual are added in place_virtual_xxx_order()
+        to_add_ids = current_real_ids.difference(stored_ids)
+        to_add_orders = [order for order in current_real_orders if order['id'] in to_add_ids]
+
+        for _id in to_remove_ids:
+            self.remove_order(_id)
+
+        for order in to_add_orders:
+            self.save_order_extended(order, custom='current')
+
+    def dump_initial_orders(self):
+        """ Save orders after initial placement for later use (visualization and so on)
+        """
+        self.refresh_orders()
+        orders = self.buy_orders + self.sell_orders
+        self.log.info('Dumping initial orders into db')
+        # Ids should be changed to avoid ids intersection with "current" orders
+        for order in orders:
+            order['id'] = str(uuid.uuid4())
+            if isinstance(order, VirtualOrder):
+                self.save_order_extended(order, virtual=True, custom='initial')
+            else:
+                self.save_order_extended(order, virtual=False, custom='initial')
+
+    def drop_initial_orders(self):
+        """ Drop old "initial" orders from the db
+        """
+        self.log.debug('Removing initial orders from the db')
+        self.clear_orders_extended(custom='initial')
 
     def remove_outside_orders(self, sell_orders, buy_orders):
         """ Remove orders that exceed boundaries
@@ -456,8 +464,11 @@ class Strategy(StrategyBase):
 
     def restore_virtual_orders(self):
         """ Create virtual further orders in batch manner. This helps to place further orders quickly on startup.
+
+            If we have both buy and sell real orders, restore both. If we have only one type of orders, restore
+            corresponding virtual orders and purge opposite orders.
         """
-        if self.buy_orders:
+        def place_further_buy_orders():
             furthest_order = self.real_buy_orders[-1]
             while furthest_order['price'] > self.lower_bound * (1 + self.increment):
                 furthest_order = self.place_further_order('base', furthest_order, virtual=True)
@@ -465,7 +476,7 @@ class Strategy(StrategyBase):
                     # Failed to place order
                     break
 
-        if self.sell_orders:
+        def place_further_sell_orders():
             furthest_order = self.real_sell_orders[-1]
             while furthest_order['price'] ** -1 < self.upper_bound / (1 + self.increment):
                 furthest_order = self.place_further_order('quote', furthest_order, virtual=True)
@@ -473,8 +484,82 @@ class Strategy(StrategyBase):
                     # Failed to place order
                     break
 
+        # Load orders from the database
+        result = self.fetch_orders_extended(only_virtual=True, custom='current')
+        stored_orders = [entry['order'] for entry in result] if result else []
+        stored_buy_orders = self.filter_buy_orders(stored_orders)
+        stored_sell_orders = self.filter_sell_orders(stored_orders, invert=False)
+
+        if not self.buy_orders and not self.sell_orders:
+            # No real orders, assume we need to bootstrap, purge old orders
+            self.log.info('No real orders, purging old virtual orders')
+            self.clear_orders_extended(custom='current')
+        elif self.buy_orders and self.sell_orders:
+            if stored_orders:
+                self.log.info('Loading virtual orders from database')
+                for order in stored_orders:
+                    self.virtual_orders.append(VirtualOrder(order))
+            else:
+                self.log.info('Recreating virtual orders')
+                place_further_buy_orders()
+                place_further_sell_orders()
+        elif self.buy_orders and not self.sell_orders:
+            # Only buy orders, purge stored sell orders
+            if stored_sell_orders:
+                self.log.info('Purging virtual sell orders because of no real sell orders')
+                for order in stored_sell_orders:
+                    self.remove_order(order)
+
+            if stored_buy_orders:
+                self.log.info('Loading virtual buy orders from database')
+                for order in stored_buy_orders:
+                    self.virtual_orders.append(VirtualOrder(order))
+            else:
+                place_further_buy_orders()
+        elif not self.buy_orders and self.sell_orders:
+            if stored_buy_orders:
+                self.log.info('Purging virtual buy orders because of no real buy orders')
+                for order in stored_buy_orders:
+                    self.remove_order(order)
+
+            if stored_sell_orders:
+                self.log.info('Loading virtual sell orders from database')
+                for order in stored_sell_orders:
+                    self.virtual_orders.append(VirtualOrder(order))
+            else:
+                place_further_sell_orders()
+
         # Set "restored" flag anyway to not break initial bootstrap
         self.virtual_orders_restored = True
+
+    def check_operational_depth(self, real_orders, virtual_orders):
+        """ Ensure proper operational depth. Replace excessive real orders or put real orders if needed.
+
+            :param list real_orders: list of real orders
+            :param list virtual_orders: list of virtual orders
+        """
+        num_real_orders = len(real_orders)
+        num_virtual_orders = len(virtual_orders)
+
+        if num_real_orders > self.operational_depth:
+            for i in range(1, num_real_orders - self.operational_depth + 1):
+                self.replace_real_order_with_virtual(real_orders[-i])
+        elif num_real_orders < self.operational_depth and not self['bootstrapping']:
+            # We need to wait until bootstrap is off because during initial orders placement this would start to place
+            # real orders without waiting until all range will be covered.
+
+            # Note: if boostrap is on and there is nothing to allocate, this check would not work until some orders
+            # will be filled. This means that changing `operational_depth` config param will not work immediately.
+
+            to_replace = min(num_virtual_orders, self.operational_depth - num_real_orders)
+            for i in range(0, to_replace):
+                self.replace_virtual_order_with_real(virtual_orders[i])
+        else:
+            return
+
+        # Orders and balances needs to be refreshed to avoid races
+        self.refresh_orders()
+        self.refresh_balances(use_cached_orders=True)
 
     def replace_real_order_with_virtual(self, order):
         """ Replace real limit order with virtual order
@@ -645,14 +730,14 @@ class Strategy(StrategyBase):
                     self.replace_partially_filled_order(closest_own_order)
                     return
 
-                if (self.bootstrapping and
+                if (self['bootstrapping'] and
                         self.base_balance_history[2] == self.base_balance_history[0] and
                         self.quote_balance_history[2] == self.quote_balance_history[0] and
                         opposite_orders):
                     # Turn off bootstrap mode whether we're didn't allocated assets during previous 3 maintenance
                     self.log.debug('Turning bootstrapping off: actual_spread > target_spread, we have free '
                                    'balances and cannot allocate them normally 3 times in a row')
-                    self.bootstrapping = False
+                    self['bootstrapping'] = False
 
                 """ Note: because we're using operations batching, there is possible a situation when we will have
                     both free balances and `self.actual_spread >= self.target_spread + self.increment`. In such case
@@ -666,7 +751,7 @@ class Strategy(StrategyBase):
                 # Place order closer to the center price
                 self.log.debug('Placing closer {} order; actual spread: {:.4%}, target + increment: {:.4%}'
                                .format(order_type, self.actual_spread, self.target_spread + self.increment))
-                if self.bootstrapping:
+                if self['bootstrapping']:
                     self.place_closer_order(asset, closest_own_order)
                 elif opposite_orders and self.actual_spread - self.increment < self.target_spread + self.increment:
                     """ Place max-sized closer order if only one order needed to reach target spread (avoid unneeded
@@ -749,12 +834,12 @@ class Strategy(StrategyBase):
                             (asset == 'quote' and furthest_own_order_price *
                              (1 + self.increment) > self.upper_bound)):
                         # Lower/upper bound has been reached and now will start allocating rest of the balance.
-                        self.bootstrapping = False
+                        self['bootstrapping'] = False
                         self.log.debug('Increasing sizes of {} orders'.format(order_type))
                         increase_finished = self.increase_order_sizes(asset, asset_balance, own_orders)
                     else:
                         # Range bound is not reached, we need to add additional orders at the extremes
-                        self.bootstrapping = False
+                        self['bootstrapping'] = False
                         self.log.debug('Placing further order than current furthest {} order'.format(order_type))
                         self.place_further_order(asset, furthest_own_order, allow_partial=True)
                 else:
@@ -781,7 +866,8 @@ class Strategy(StrategyBase):
                     1 - self.partial_fill_threshold)) and self.bitshares.txbuffer.is_empty()):
                 # Dust order on opposite side, cancel dust order and place closer order
                 # Require empty txbuffer to avoid rare condition when order may be already canceled from
-                # replace_partially_filled_order() call
+                # replace_partially_filled_order() call.
+                # Note: we cannot use such check for own side because we will not have the balance to allocate
                 self.log.info('Cancelling dust order at opposite side, placing closer {} order'.format(order_type))
                 previous_bundle = self.bitshares.bundle
                 self.bitshares.bundle = False
@@ -791,8 +877,10 @@ class Strategy(StrategyBase):
                 self.refresh_orders()
                 self.bitshares.bundle = previous_bundle
         else:
-            # Place first buy order as close to the lower bound as possible
-            self.bootstrapping = True
+            # Place furthest order as close to the bound as possible
+            if not opposite_orders:
+                self['bootstrapping'] = True
+                self.drop_initial_orders()
             order = None
             self.log.debug('Placing first {} order'.format(order_type))
             if asset == 'base':
@@ -896,17 +984,11 @@ class Strategy(StrategyBase):
         new_order_amount = 0
         furthest_order_bound = 0
         total_balance = 0
-        symbol = ''
-        precision = 0
 
         if asset == 'quote':
             total_balance = self.quote_total_balance
-            symbol = self.market['quote']['symbol']
-            precision = self.market['quote']['precision']
         elif asset == 'base':
             total_balance = self.base_total_balance
-            symbol = self.market['base']['symbol']
-            precision = self.market['base']['precision']
 
         # Mountain mode:
         if (
@@ -933,7 +1015,7 @@ class Strategy(StrategyBase):
             for order in orders:
                 order_index = orders.index(order)
                 order_amount = order['base']['amount']
-                is_closest_order = False
+                increase_factor = max(1 + self.increment, self.min_increase_factor)
 
                 # This check prevents choosing order with index lower than the list length
                 if order_index == 0:
@@ -941,7 +1023,6 @@ class Strategy(StrategyBase):
                     # This allows our closest order amount exceed highest opposite-side order amount
                     closer_order = order
                     closer_bound = closer_order['base']['amount'] * (1 + self.increment)
-                    is_closest_order = True
                 else:
                     closer_order = orders[order_index - 1]
                     closer_bound = closer_order['base']['amount']
@@ -950,13 +1031,11 @@ class Strategy(StrategyBase):
                 if order_index + 1 < len(orders):
                     # Current order is a not furthest order
                     further_order = orders[order_index + 1]
-                    is_least_order = False
+                    further_bound = further_order['base']['amount'] * (1 + self.increment)
                 else:
                     # Current order is furthest order
                     further_order = orders[order_index]
-                    is_least_order = True
-
-                further_bound = further_order['base']['amount'] * (1 + self.increment)
+                    further_bound = further_order['base']['amount'] * increase_factor
 
                 if (
                     further_bound > order_amount * (1 + self.increment / 10) < closer_bound
@@ -975,39 +1054,11 @@ class Strategy(StrategyBase):
                         [1000 1000 1000 200 100 100 <center>]
                         [1000 1000 1000 200 200 100 <center>]
                         [1000 1000 1000 200 200 200 <center>]
-
-                        At the same time, we want MAX orders size increase for ALL orders in case of external transfer
-                        of new funds. To achieve this we are setting self.mountain_max_increase_mode flag when
-                        examining furthest order.
                     """
                     new_order_amount = further_bound
                     increase_factor = max(1 + self.increment, self.min_increase_factor)
-
-                    if not self.mountain_max_increase_mode:
-                        # Smooth increase for orders between furthest and closest (see docstring example)
-                        new_order_amount = min(further_bound, order_amount * increase_factor)
-
-                    if is_least_order:
-                        new_order_amount = order_amount * increase_factor
-                        new_orders_sum = 0
-                        amount = order_amount
-                        for o in orders:
-                            amount = amount * (1 + self.increment)
-                            new_orders_sum += amount
-                        # To reduce allocation rounds, increase furthest order more if we can
-                        increased_amount = order_amount * (total_balance / new_orders_sum)
-
-                        if increased_amount > new_order_amount:
-                            self.log.debug('Correcting furthest order amount from {:.{prec}f} to: {:.{prec}f} {}'
-                                           .format(new_order_amount, increased_amount, symbol, prec=precision))
-                            new_order_amount = increased_amount
-                            # Set bypass flag to not limit next orders
-                            self.mountain_max_increase_mode = True
-                            self.log.debug('Activating max increase mode for mountain mode')
-                    elif is_closest_order and self.mountain_max_increase_mode:
-                        # Turn off bypass flag when reaching closest order
-                        self.log.debug('Deactivating max increase mode for mountain mode')
-                        self.mountain_max_increase_mode = False
+                    # Smooth increase for orders between furthest and closest (see docstring example)
+                    new_order_amount = min(further_bound, order_amount * increase_factor)
 
                     return self._increase_single_order(asset, asset_balance, order, new_order_amount)
 
@@ -1097,7 +1148,7 @@ class Strategy(StrategyBase):
                 elif (
                     order_amount_normalized < closer_order_bound
                     and order_amount_normalized < closest_order_bound
-                    and closer_order_bound - order_amount >= order_amount * (math.sqrt(1 + self.increment) - 1) / 2
+                    and closer_order_bound - order_amount >= order_amount * self.increment / 2
                 ):
                     """ Check whether order amount is less than closer or order and the diff is more than 50% of one
                         increment. Note: we can use only 50% or less diffs. Bigger will not work. For example, with
@@ -1164,19 +1215,6 @@ class Strategy(StrategyBase):
                 else:
                     is_closest_order = True
                     closer_order_bound = initial_closest_order_bound
-
-                    new_orders_sum = 0
-                    amount = order_amount
-                    for _ in orders:
-                        new_orders_sum += amount
-                        amount = amount / math.sqrt(1 + self.increment)
-                    virtual_furthest_order_bound = amount * (total_balance / new_orders_sum)
-                    new_amount = order_amount * (total_balance / new_orders_sum) / self.min_increase_factor
-
-                    if new_amount > closer_order_bound and virtual_furthest_order_bound > furthest_order_bound:
-                        # Maximize order up to max possible amount if we can
-                        # New order may be feeling bigger than expected after mountain -> neutral transition, it's ok
-                        closer_order_bound = new_amount
 
                 need_increase = False
                 order_amount_normalized = order_amount * (1 + self.increment / 10)
@@ -1477,13 +1515,29 @@ class Strategy(StrategyBase):
         limiter = 0
         if asset == 'base':
             # Define amounts in terms of BASE and QUOTE
-            base_amount = own_asset_amount
+            base_amount = limiter = own_asset_amount
             quote_amount = opposite_asset_amount
-            limiter = base_amount
         elif asset == 'quote':
-            quote_amount = own_asset_amount
-            limiter = quote_amount
+            quote_amount = limiter = own_asset_amount
             price = price ** -1
+
+        # Check whether new order will excess the limiter. Limiter is set based on own_aseet_limit or
+        # opposite_asset_limit kwargs
+        if balance < limiter:
+            if allow_partial or (
+                # Accept small inaccuracy for full-sized closer order
+                place_order and not allow_partial and limiter - balance < 20 * 10 ** -precision
+            ):
+                self.log.debug('Limiting {} order amount to available asset balance: {:.{prec}f} {}'
+                               .format(order_type, balance, symbol, prec=precision))
+                if asset == 'base':
+                    quote_amount = balance / price
+                elif asset == 'quote':
+                    quote_amount = balance
+            elif place_order and not allow_partial:
+                self.log.debug('Not enough balance to place closer {} order; need/avail: {:.{prec}f}/{:.{prec}f}'
+                               .format(order_type, limiter, balance, prec=precision))
+                place_order = False
 
         # Make sure new order is bigger than allowed minimum
         hard_limit = 0
@@ -1497,27 +1551,9 @@ class Strategy(StrategyBase):
                     hard_limit = base_amount
                 elif asset == 'quote':
                     hard_limit = quote_amount
-                limiter = hard_limit
-
-        # Check whether new order will exceed available balance
-        if balance < limiter:
-            if place_order and not allow_partial:
-                self.log.debug('Not enough balance to place closer {} order; need/avail: {:.{prec}f}/{:.{prec}f}'
-                               .format(order_type, limiter, balance, prec=precision))
-                place_order = False
-            # Closer order should not be less than threshold
-            elif (allow_partial and
-                    balance > hard_limit and
-                    balance > order['base']['amount'] * self.partial_fill_threshold):
-                self.log.debug('Limiting {} order amount to available asset balance: {:.{prec}f} {}'
-                               .format(order_type, balance, symbol, prec=precision))
-                if asset == 'base':
-                    quote_amount = balance / price
-                elif asset == 'quote':
-                    quote_amount = balance
-            elif place_order:
+            if balance < hard_limit:
                 self.log.debug('Not enough balance to place minimal allowed order: {:.{prec}f}/{:.{prec}f} {}'
-                               .format(balance, limiter, symbol, prec=precision))
+                               .format(balance, hard_limit, symbol, prec=precision))
                 place_order = False
 
         if place_order and asset == 'base':
@@ -1601,37 +1637,35 @@ class Strategy(StrategyBase):
             limiter = quote_amount
             price = price ** -1
 
-        # Make sure new order is bigger than allowed minimum
-        hard_limit = 0
-        if place_order:
-            corrected_quote_amount = self.check_min_order_size(quote_amount, price)
-            if corrected_quote_amount > quote_amount:
-                self.log.debug('Correcting further order amount to minimal allowed: {} -> {}'
-                               .format(quote_amount, corrected_quote_amount))
-                quote_amount = corrected_quote_amount
-                base_amount = quote_amount * price
-                if asset == 'base':
-                    hard_limit = base_amount
-                elif asset == 'quote':
-                    hard_limit = quote_amount
-                limiter = hard_limit
-
         # Check whether new order will exceed available balance
         if balance < limiter:
             if place_order and not allow_partial:
                 self.log.debug('Not enough balance to place further {} order; need/avail: {:.{prec}f}/{:.{prec}f}'
                                .format(order_type, limiter, balance, prec=precision))
                 place_order = False
-            elif allow_partial and balance > hard_limit:
+            elif allow_partial:
                 self.log.debug('Limiting {} order amount to available asset balance: {:.{prec}f} {}'
                                .format(order_type, balance, symbol, prec=precision))
                 if asset == 'base':
                     quote_amount = balance / price
                 elif asset == 'quote':
                     quote_amount = balance
-            elif place_order:
+
+        # Make sure new order is bigger than allowed minimum
+        hard_limit = 0
+        if place_order:
+            corrected_quote_amount = self.check_min_order_size(quote_amount, price)
+            if corrected_quote_amount > quote_amount:
+                self.log.debug('Correcting further order amount to minimal allowed')
+                quote_amount = corrected_quote_amount
+                base_amount = quote_amount * price
+                if asset == 'base':
+                    hard_limit = base_amount
+                elif asset == 'quote':
+                    hard_limit = quote_amount
+            if balance < hard_limit:
                 self.log.debug('Not enough balance to place minimal allowed order: {:.{prec}f}/{:.{prec}f} {}'
-                               .format(balance, limiter, symbol, prec=precision))
+                               .format(balance, hard_limit, symbol, prec=precision))
                 place_order = False
 
         if place_order and asset == 'base':
@@ -1907,6 +1941,10 @@ class Strategy(StrategyBase):
             :param float | price: Order price in BASE
             :return float | new_amount: passed amount or minimal allowed amount
         """
+        # Calculate minimal orders amounts based on asset precision
+        if not self.order_min_base or not self.order_min_quote:
+            self.calculate_min_amounts()
+
         if (amount < self.order_min_quote or
                 amount * price < self.order_min_base):
             self.log.debug('Too small order, base: {:.8f}/{:.8f}, quote: {}/{}'
@@ -1926,6 +1964,7 @@ class Strategy(StrategyBase):
 
         order = VirtualOrder()
         order['price'] = price
+        order['id'] = str(uuid.uuid4())
 
         quote_asset = Amount(amount, self.market['quote']['symbol'], bitshares_instance=self.bitshares)
         order['quote'] = quote_asset
@@ -1941,6 +1980,8 @@ class Strategy(StrategyBase):
         # Immediately lower avail balance
         self.base_balance['amount'] -= order['base']['amount']
 
+        self.save_order_extended(order, virtual=True, custom='current')
+
         return order
 
     def place_virtual_sell_order(self, amount, price):
@@ -1954,6 +1995,7 @@ class Strategy(StrategyBase):
         precision = self.market['quote']['precision']
 
         order = VirtualOrder()
+        order['id'] = str(uuid.uuid4())
         order['price'] = price ** -1
 
         quote_asset = Amount(amount * price, self.market['base']['symbol'], bitshares_instance=self.bitshares)
@@ -1970,6 +2012,8 @@ class Strategy(StrategyBase):
         # Immediately lower avail balance
         self.quote_balance['amount'] -= order['base']['amount']
 
+        self.save_order_extended(order, virtual=True, custom='current')
+
         return order
 
     def cancel_orders_wrapper(self, orders, **kwargs):
@@ -1979,11 +2023,15 @@ class Strategy(StrategyBase):
         if not isinstance(orders, (list, set, tuple)):
             orders = [orders]
 
-        virtual_orders = [order['price'] for order in orders if isinstance(order, VirtualOrder)]
-        real_orders = [order for order in orders if 'id' in order]
+        virtual_orders = [order for order in orders if isinstance(order, VirtualOrder)]
+        real_orders = [order for order in orders if not isinstance(order, VirtualOrder)]
 
-        # Just rebuild virtual orders list to avoid calling Asset's __eq__ method
-        self.virtual_orders = [order for order in self.virtual_orders if order['price'] not in virtual_orders]
+        if virtual_orders:
+            # Just rebuild virtual orders list to avoid calling Asset's __eq__ method
+            self.virtual_orders = [order for order in self.virtual_orders if order not in virtual_orders]
+            # Also remove virtual order from database
+            for order in virtual_orders:
+                self.remove_order(order)
 
         if real_orders:
             return self.cancel_orders(real_orders, **kwargs)
