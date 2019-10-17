@@ -2,11 +2,12 @@ import os
 import pathlib
 
 from dexbot import APP_NAME, AUTHOR
+from dexbot.node_manager import get_sorted_nodelist
+
 
 import appdirs
 from ruamel import yaml
 from collections import OrderedDict
-
 
 DEFAULT_CONFIG_DIR = appdirs.user_config_dir(APP_NAME, appauthor=AUTHOR)
 DEFAULT_CONFIG_FILE = os.path.join(DEFAULT_CONFIG_DIR, 'config.yml')
@@ -36,9 +37,11 @@ class Config(dict):
             self._config = self.load_config(self.config_file)
 
         # In case there is not a list of nodes in the config file,
-        # the node will be replaced by a list of pre-defined nodes.
+        # the node will be replaced by a list of pre-defined nodes,
+        # sorted by least latency, no-response nodes are dropped.
         if isinstance(self._config['node'], str):
-            self._config['node'] = self.node_list
+            sorted_nodes = get_sorted_nodelist(self.node_list)
+            self._config['node'] = sorted_nodes
             self.save_config()
 
     def __setitem__(self, key, value):
@@ -169,27 +172,29 @@ class Config(dict):
     def node_list(self):
         """ A pre-defined list of Bitshares nodes. """
         return [
-            "wss://eu.openledger.info/ws",
             "wss://bitshares.openledger.info/ws",
-            "wss://dexnode.net/ws",
             "wss://openledger.hk/ws",
-            "wss://kc-us-dex.xeldal.com/ws",
-            "wss://ws.gdex.top",
             "wss://na.openledger.info/ws",
-            "wss://api.fr.bitsharesdex.com",
-            "wss://eu.nodes.bitshares.ws",
-            "wss://us.nodes.bitshares.ws",
-            "wss://sg.nodes.bitshares.ws",
-            "wss://api.bts.mobi/ws",
-            "wss://btsws.roelandp.nl/ws",
-            "wss://api.bitshares.bhuz.info/ws",
-            "wss://bts-api.lafona.net/ws",
-            "wss://kimziv.com/ws",
-            "wss://api.btsgo.net/ws",
-            "wss://bts.open.icowallet.net/ws",
-            "wss://freedom.bts123.cc:15138/",
+            "wss://ws.gdex.top",
             "wss://api.bts.ai",
+            "wss://api-ru.bts.blckchnd.com",
+            "wss://bts-seoul.clockwork.gr",
             "wss://btsfullnode.bangzi.info/ws",
-            "wss://api.dex.trading/",
-            "wss://citadel.li/node"
+            "wss://api.fr.bitsharesdex.com",
+            "wss://btsws.roelandp.nl/ws",
+            "wss://kc-us-dex.xeldal.com/ws",
+            "wss://master.us.api.bitshares.org/ws",
+            "wss://new-york.us.api.bitshares.org/ws",
+            "wss://seattle.us.api.bitshares.org/ws",
+            "wss://losangeles.us.api.bitshares.org/ws",
+            "wss://siliconvalley.us.api.bitshares.org/ws",
+            "wss://dallas.us.api.bitshares.org/ws",
+            "wss://toronto2.ca.api.bitshares.org/ws",
+            "wss://master.eu.api.bitshares.org/ws",
+            "wss://amsterdam.eu.api.bitshares.org/ws",
+            "wss://london.eu.api.bitshares.org/ws",
+            "wss://paris.eu.api.bitshares.org/ws",
+            "wss://sydney.au.api.bitshares.org/ws",
+            "wss://singapore.asia.api.bitshares.org/ws",
+            "wss://tokyo.eu.api.bitshares.org/ws",
         ]
