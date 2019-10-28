@@ -10,7 +10,7 @@ from dexbot.storage import Storage
 class CcxtOrderEngine(Storage):
     """
     A strategy using the CCXTOrderEngine can have more than one ccxt exchange.
-    We need to instantiate all the exchanges used in the strategy by the .ini
+    We need to instantiate all the exchanges used in the strategy by the
     configuration file. Then execute the orders through the exchange(s) based on
     the strategy layer which instantiates and instance of the CCXTOrderEngine
     """
@@ -18,7 +18,7 @@ class CcxtOrderEngine(Storage):
     def __init__(self, exchange, check_timeout: int = 15):
         self.check_timeout = check_timeout
         self.exchange = exchange
-
+        
         self.orders_log = logging.LoggerAdapter(logging.getLogger('dexbot.orders_log'), {})
         self.name = 'Ccxt_Order_Engine'
 
