@@ -19,26 +19,27 @@ class SimpleArbConfig(BaseConfig):
         # External exchanges for simple arb strategy
         EXCHANGES = [
             ('cointiger', 'CoinTiger'),
-            ('bitfinex', 'Bitfinex'),
             ('binance', 'Binance')
         ]
 
         simplearb_orders_config = [
-            ConfigElement('amount', 'float', 1, 'Amount',
-                          'Fixed order size, expressed in quote asset, unless "relative order size" selected',
-                          (0, None, 8, '')),
-            ConfigElement('relative_order_size', 'bool', False, 'Relative order size',
-                          'Amount is expressed as a percentage of the account balance of quote/base asset', None),
+            ConfigElement('cex_price_source', 'choice', EXCHANGES[0][0], 'Select a CEX',
+                          'The bot will arb with this Centralized Exchange', EXCHANGES),
+            ConfigElement('cex_apikey', 'string', '', 'API Key', 'Enter CEX API key here', ''),
+            ConfigElement('cex_secret', 'string', '', 'Secret', 'Enter CEX Secret here', ''),
+            ConfigElement('cex_market', 'string', 'BTS/ETH', 'Market',
+                          'CEX market to operate on, in the format QUOTE/BASE',
+                          r'[A-Z0-9\.]+[:\/][A-Z0-9\.]+'),
+            ConfigElement('market_depth_amount', 'int', 2, 'Market depth',
+                          'From what order depth will market trade opportunities measured? ',
+                          (1, 100, 2, '')),
             ConfigElement('spread', 'float', 5, 'Spread',
-                          'The percentage difference between buy and sell', (0, 100, 2, '%')),
-            ConfigElement('market_depth_amount', 'float', 0, 'Market depth',
-                          'From which depth will market spread be measured? (QUOTE amount)',
-                          (0.00000001, 1000000000, 8, '')),
-            ConfigElement('price_change_threshold', 'float', 2, 'Price change threshold',
-                          'Define center price threshold to react on', (0, 100, 2, '%')),
-            ConfigElement('expiration_time', 'int', 157680000, 'Order expiration time',
-                          'Define custom order expiration time to force orders reset more often, seconds',
-                          (30, 157680000, ''))
+                          'The min percentage spread in order to arb', (0, 100, 2, '%')),
+            ConfigElement('reserve_amt', 'float', 5, 'Percentage to reserve',
+                          'Percentage to reserve for fees', (0, 100, 2, '%')),
+            ConfigElement('expiration_time', 'int', 3, 'Order expiration time in seconds',
+                          'Define order expiration time in seconds for reset, suggest 3',
+                          (1, 10, ''))
         ]
 
         return BaseConfig.configure(return_base_config) + simplearb_orders_config

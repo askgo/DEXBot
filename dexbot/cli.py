@@ -5,14 +5,15 @@ import os.path
 import signal
 import sys
 
-from dexbot.config import Config, DEFAULT_CONFIG_FILE
+from dexbot.config import Config, DEFAULT_CONFIG_FILE, DEFAULT_ARB_CONFIG_FILE
 from dexbot.cli_conf import SYSTEMD_SERVICE_NAME, get_whiptail, setup_systemd
 from dexbot.helper import initialize_orders_log, initialize_data_folders
 from dexbot.ui import (
     verbose,
     chain,
     unlock,
-    configfile
+    configfile,
+    arbconfig
 )
 
 from .worker import WorkerInfrastructure
@@ -76,6 +77,11 @@ initialize_data_folders()
     type=int,
     default=-1,
     help='Sort nodes, w/max timeout in sec. [sec > 0]'
+)
+@click.option(
+   '--arbconfig',
+    type=str,
+    default=DEFAULT_ARB_CONFIG_FILE,
 )
 @click.pass_context
 def main(ctx, **kwargs):
@@ -147,6 +153,31 @@ def runservice():
 
 @main.command()
 @click.pass_context
+@arbconfig
+@chain
+@unlock
+def configurearb(ctx):
+    """ Interactively configure arb dexbot
+    """
+    # Make sure the dexbot service isn't running while we do the config edits
+    if dexbot_service_running():
+        click.echo("Stopping dexbot daemon")
+        os.system('systemctl --user stop dexbot')
+
+    log.info(ctx.obj['arbconfig'])
+
+    config = Config(path=ctx.obj['arbconfig'])
+    configure_dexbot(config, ctx, arb=True)
+    config.save_config()
+
+    click.echo("New configuration saved")
+    if config.get('systemd_status', 'disabled') == 'enabled':
+        click.echo("Starting dexbot daemon")
+        os.system("systemctl --user start dexbot")
+
+
+@main.command()
+@click.pass_context
 @configfile
 @chain
 @unlock
@@ -159,7 +190,7 @@ def configure(ctx):
         os.system('systemctl --user stop dexbot')
 
     config = Config(path=ctx.obj['configfile'])
-    configure_dexbot(config, ctx)
+    configure_dexbot(config, ctx, arb=False)
     config.save_config()
 
     click.echo("New configuration saved")

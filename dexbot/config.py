@@ -11,6 +11,7 @@ from collections import OrderedDict
 
 DEFAULT_CONFIG_DIR = appdirs.user_config_dir(APP_NAME, appauthor=AUTHOR)
 DEFAULT_CONFIG_FILE = os.path.join(DEFAULT_CONFIG_DIR, 'config.yml')
+DEFAULT_ARB_CONFIG_FILE = os.path.join(DEFAULT_CONFIG_DIR, 'arb_config.yml')
 
 
 class Config(dict):

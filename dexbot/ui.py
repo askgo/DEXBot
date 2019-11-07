@@ -97,8 +97,9 @@ def chain(f):
     def new_func(ctx, *args, **kwargs):
         nodelist = ctx.config["node"]
         timeout = int(ctx.obj.get("sortnodes"))
+        arb_strategy = str(ctx.obj.get("arbstrategy"))
 
-        host_ip = '8.8.8.8'
+        host_ip = '1.1.1.1'
         if ping(host_ip, 3) is False:
             click.echo("internet NOT available! Please check your connection!")
             log.critical("Internet not available, exiting")
@@ -165,6 +166,16 @@ def configfile(f):
         if not os.path.isfile(ctx.obj["configfile"]):
             Config(path=ctx.obj['configfile'])
         ctx.config = yaml.safe_load(open(ctx.obj["configfile"]))
+        return ctx.invoke(f, *args, **kwargs)
+    return update_wrapper(new_func, f)
+
+
+def arbconfig(f):
+    @click.pass_context
+    def new_func(ctx, *args, **kwargs):
+        if not os.path.isfile(ctx.obj["arbconfig"]):
+            Config(path=ctx.obj['arbconfig'])
+        ctx.config = yaml.safe_load(open(ctx.obj["arbconfig"]))
         return ctx.invoke(f, *args, **kwargs)
     return update_wrapper(new_func, f)
 

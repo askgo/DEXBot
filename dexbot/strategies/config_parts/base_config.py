@@ -64,10 +64,10 @@ class BaseConfig:
 
         # Common configs
         base_config = [
-            ConfigElement('account', 'string', '', 'Account',
+            ConfigElement('account', 'string', '', 'Bitshares DEX Account',
                           'BitShares account name for the bot to operate with',
                           ''),
-            ConfigElement('market', 'string', 'BTS/USD', 'Market',
+            ConfigElement('market', 'string', 'BTS/USD', 'Bitshares Market',
                           'BitShares market to operate on, in the format QUOTE/BASE, for example \"BTS/USD\"',
                           r'[A-Z0-9\.]+[:\/][A-Z0-9\.]+'),
             ConfigElement('fee_asset', 'string', 'BTS', 'Fee asset',
