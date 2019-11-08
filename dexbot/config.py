@@ -4,7 +4,6 @@ import pathlib
 from dexbot import APP_NAME, AUTHOR
 from dexbot.node_manager import get_sorted_nodelist
 
-
 import appdirs
 from ruamel import yaml
 from collections import OrderedDict

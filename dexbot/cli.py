@@ -83,6 +83,13 @@ initialize_data_folders()
     type=str,
     default=DEFAULT_ARB_CONFIG_FILE,
 )
+@click.option(
+    '--arb',
+    '-r',
+    type=str,
+    default=None,
+    help='Name of Arb strategy to run'
+)
 @click.pass_context
 def main(ctx, **kwargs):
     ctx.obj = {}
@@ -134,6 +141,47 @@ def run(ctx):
 
 @main.command()
 @click.pass_context
+@arbconfig
+@chain
+@unlock
+@verbose
+def runarb(ctx):
+    """ Continuously run the arbitrage worker
+    """
+    # test this for single arb strategy only.
+#    arb_strategy = str(ctx.obj.get("arb"))
+    arb_strategy = ctx.obj.get("arb")
+    log.info(f"arb strategy name given: {arb_strategy}")
+
+    if arb_strategy is None:
+        log.info("no default strategy offered, run 1st one if available.")
+        # by default, run the first strategy in the config.
+        num_workers = len(ctx.config['workers'])
+        log.info(f"LENGTH OF WORKERS LIST: {num_workers}")
+        all_workers = ctx.config['workers']
+        worker_zero = list(all_workers.items())[0]
+        log.info(f"Zeroth Worker to run by Default: {worker_zero}")
+        worker_zero_name = worker_zero[0]
+        log.info(f'worker zero name {worker_zero_name}')
+        ctx.config = Config.get_worker_config_file(worker_zero_name, DEFAULT_ARB_CONFIG_FILE)
+    else:
+        try:
+            click.echo("Arb Strategy selected by user to Run: " + str(arb_strategy))
+            ctx.config = Config.get_worker_config_file(arb_strategy, DEFAULT_ARB_CONFIG_FILE)
+        except Exception as e:
+            log.error(f"Cannot find worker: {e}")
+            sys.exit(70)
+
+    try:
+        log.info("Now running worker infrastructure")
+#        worker = WorkerInfrastructure(ctx.config)
+#        worker.run()
+    except errors.NoWorkersAvailable:
+        sys.exit(70)  # 70= "Software error" in /usr/include/sysexts.h
+
+
+@main.command()
+@click.pass_context
 @configfile
 @chain
 @unlock
@@ -156,7 +204,7 @@ def runservice():
 @arbconfig
 @chain
 @unlock
-def configurearb(ctx):
+def configarb(ctx):
     """ Interactively configure arb dexbot
     """
     # Make sure the dexbot service isn't running while we do the config edits

@@ -97,7 +97,6 @@ def chain(f):
     def new_func(ctx, *args, **kwargs):
         nodelist = ctx.config["node"]
         timeout = int(ctx.obj.get("sortnodes"))
-        arb_strategy = str(ctx.obj.get("arbstrategy"))
 
         host_ip = '1.1.1.1'
         if ping(host_ip, 3) is False:
