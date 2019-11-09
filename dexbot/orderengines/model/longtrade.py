@@ -1,4 +1,4 @@
-from model.trade import Trade
+from dexbot.orderengines.model.trade import Trade
 
 
 class LongTrade(Trade):

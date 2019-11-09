@@ -1,7 +1,8 @@
-from model.trade import Trade
+from dexbot.orderengines.model.trade import Trade
 
 
 class ShortTrade(Trade):
+
     def __init__(self,
                  start_price: float,
                  symbol: str,
@@ -15,7 +16,7 @@ class ShortTrade(Trade):
         self.stop_price = start_price * (1 + stop_percent_change / 100)
 
     @property
-    def exit_price(self):i
+    def exit_price(self):
         return self.target_price
 
     @property
