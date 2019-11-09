@@ -157,7 +157,7 @@ def runarb(ctx):
         log.info("no default strategy offered, run 1st one if available.")
         # by default, run the first strategy in the config.
         num_workers = len(ctx.config['workers'])
-        log.info(f"LENGTH OF WORKERS LIST: {num_workers}")
+        log.info(f"Length of Workers List: {num_workers}")
         all_workers = ctx.config['workers']
         worker_zero = list(all_workers.items())[0]
         log.info(f"Zeroth Worker to run by Default: {worker_zero}")

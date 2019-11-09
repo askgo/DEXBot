@@ -2,8 +2,8 @@ import asyncio
 import logging
 
 from ccxt import ExchangeError
-from model.longtrade import LongTrade
-from model.shorttrade import ShortTrade
+from dexbot.orderengines.model.longtrade import LongTrade
+from dexbot.orderengines.model.shorttrade import ShortTrade
 from dexbot.storage import Storage
 
 
