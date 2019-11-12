@@ -7,7 +7,8 @@ from dexbot.orderengines.model.shorttrade import ShortTrade
 from dexbot.storage import Storage
 
 
-class CcxtOrderEngine(Storage):
+class CEXOrderEngine(Storage):
+    # todo - move methods ccxt_engine to cex_engine.py
     """
     A strategy using the CCXTOrderEngine can have more than one ccxt exchange.
     We need to instantiate all the exchanges used in the strategy by the

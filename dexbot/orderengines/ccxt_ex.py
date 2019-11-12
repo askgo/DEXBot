@@ -3,7 +3,6 @@ from ccxt import ExchangeNotAvailable
 from ccxt import OrderNotFound
 import logging
 
-
 class CcxtExchange:
 
     def __init__(self, exchange=None):
@@ -28,7 +27,7 @@ class CcxtExchange:
     def method_list(self):
         """
         Not all exchanges have methods available through ccxt.
-        this method returns a dataframe with a list of methods 
+        this method returns a dataframe with a list of methods
         for this specific exchange denoted as true
 
         :return: dict
@@ -64,7 +63,6 @@ class CcxtExchange:
         except ccxt.BaseError as e:
             self.log.exception("fetch_trading_fees exception {}".format(str(e)))
             raise e
-            return None
 
     def fetch_open_orders(self, symbol: str = None):
         """

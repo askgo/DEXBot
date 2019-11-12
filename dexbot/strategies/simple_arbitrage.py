@@ -7,6 +7,8 @@ from decimal import Decimal
 # Project imports
 from dexbot.strategies.base import StrategyBase
 from dexbot.strategies.config_parts.s_arb_config import SimpleArbConfig
+import dexbot.orderengines.ccxt_ex
+import dexbot.orderengines.cointiger_ex
 
 
 STRATEGY_NAME = 'Simple Arbitrage'
