@@ -34,6 +34,7 @@ def get_exchange_config(config_filename, exch_name):
         exch_ids = parser.sections()
         log.info(f'config file: {config_dir}, {config_filename}')
         log.info(f"exchange ids {exch_ids}")
+        sec = None
         if exch_name in exch_ids:
             sec = { exch_name: dict(parser.items(exch_name)) }
 #            sec = {section_name: dict(parser.items(section_name)) for section_name in exch_ids}

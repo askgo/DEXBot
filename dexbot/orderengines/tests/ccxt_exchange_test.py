@@ -3,7 +3,7 @@ sys.path.append("..")
 
 import logging
 from ccxt_ex import CcxtExchange
-from ccxt_helper import get_ccxt_module, get_cointiger_module
+from ccxt_helper import get_ccxt_module, get_cointiger_module, get_exchange_keys, get_exchange_config
 import pandas as pd
 
 from cointiger_sdk import cointiger
@@ -39,7 +39,7 @@ def test_print_orderbooks(symbol, cx):
     :param cx: CcxtExchange object
     :return: none
     """
-    log.info(f"Fetch Ticker for {symbol} : {ccxt_ex.fetch_ticker(symbol)}\n")
+    log.info(f"Fetch Ticker for {symbol} : {cx.fetch_ticker(symbol)}\n")
     log.info(f"Fetching L2 Order Book: {cx.fetch_l2_order_book(symbol)}\n")
     log.info(f"Fetching Order Book: {cx.fetch_order_book(symbol)}\n")
 
@@ -231,11 +231,16 @@ if __name__ == '__main__':
     bid_symbol = symbol.split('/')[1]
     log.info(f'CEX Price: Ask Symbol ({ask_symbol}), Vol is Amount: Bid Symbol: ({bid_symbol})')
 
+    exch_name = 'cointiger'
     # update this to reflect your config file
-    config_file = "safe/secrets_test.ini"
-    api_key = setup_cointiger(config_file)
-    ccxt_ex = get_ccxt_module(config_file, 'cointiger')
-    cx = CcxtExchange(exchange=ccxt_ex)
+    config_file = "ccxt_config/secrets_test.ini"
+    api_key = setup_cointiger(config_file) # redundant, use cointiger_ex.
+    # todo: need to test using cointiger_ex. py and ccxt_ex.py refactored
+
+    config_sections = get_exchange_config(config_file, exch_name)
+    apikey, secret = get_exchange_keys(config_sections, exch_name)
+    cx = CcxtExchange(exch_name, symbol, api_key, secret)
+
     depth = 2
     asks, bids = display_orderbook(depth, symbol, cx)
 

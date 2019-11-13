@@ -13,6 +13,8 @@ class CoinTiger(CcxtExchange):
     def __init__(self, exch_name, symbol, api_key, secret):
         super().__init__(exch_name, symbol, api_key, secret)
         self.cointiger = cointiger.set_key_and_secret(self.api_key, self.secret)
+        self.ct_symbol = self.symbol.replace('/', '').lower()
+
 
         self.log = logging.LoggerAdapter(
                 logging.getLogger('dexbot.orderengines.ccxt_exchange'), {})
@@ -97,7 +99,9 @@ class CoinTiger(CcxtExchange):
 
 
     def create_sell_order(self, symbol: str, amount: float, price: float):
+        symbol = symbol.replace('/', '').lower() # cointiger symbol has no slash and is lower
         self.ct_place_order(symbol, price, amount, 'sell')
 
     def create_buy_order(self, symbol: str, amount: float, price: float):
+        symbol = symbol.replace('/', '').lower() # cointiger symbol has no slash and is lower
         self.ct_place_order(symbol, price, amount, 'buy')
