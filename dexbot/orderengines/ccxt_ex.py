@@ -5,14 +5,26 @@ import logging
 
 class CcxtExchange:
 
-    def __init__(self, exchange=None):
+    def __init__(self, exch_name, symbol, api_key, secret):
         """
         load_markets() method will request markets, that can later be accessed as a property
         see Market Cache Force Reload in api docs for more details on how this works.
-
-        :param exchange:
         """
-        self.exchange = exchange
+        self.api_key = api_key
+        self.secret = secret
+        self.symbol = symbol
+        self.exch_name = exch_name
+
+        self.exchange = getattr(ccxt, self.exch_name)({
+            "apiKey": self.api_key,
+            "secret": self.secret,
+            'timeout': 30000,
+            'enableRateLimit': True,
+            'verbose': False,
+            'precision': {'price': 8,
+                          'amount': 8, }
+        })
+
         self.exchange.load_markets()
 
         self.log = logging.LoggerAdapter(
@@ -35,11 +47,11 @@ class CcxtExchange:
         methods_avail = self.exchange.has
         return {key: value for key, value in methods_avail.items() if value is True}
 
+
     @property
     def free_balance(self):
         """
         List current non zero balance for all assets on exchange.
-
         :return: dict
         """
         try:
@@ -49,6 +61,7 @@ class CcxtExchange:
         except ccxt.BaseError as e:
             self.log.exception("free_balance exception {}".format(str(e)))
             raise e
+
 
     #todo: need to test this method
     def fetch_trading_fees(self):
@@ -89,15 +102,16 @@ class CcxtExchange:
             self.log.exception("fetch_order exception {}".format(str(e)))
             raise e
 
-    def cancel_order(self, order_id: int):
+    def cancel_order(self, order_id: int, symbol: str):
         """
+        # todo: cross check with ccxt to make sure this works.
         cancel order based on order_id
-
         :param order_id:
+        :param symbol:
         :return:
         """
         try:
-            self.exchange.cancel_order(order_id)
+            self.exchange.cancel_order(order_id, symbol)
         except OrderNotFound:
             self.log.exception("cancel_order exception {}".format(OrderNotFound))
             # treat as success

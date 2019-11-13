@@ -8,27 +8,25 @@ class CentralizedExchange(metaclass=abc.ABCMeta):
     Cointiger is not ccxt certified and the v2 of their API has yet to be integrated into CCXT
 
     """
-
-    def __init__(self, exchange):
-        self.exchange = exchange
-
+    def __init__(self, exch_name, symbol, api_key, secret):
+        self.api_key = api_key
+        self.secret = secret
+        self.symbol = symbol
+        self.exch_name = exch_name
 
     @property
     @abc.abstractmethod
     def method_list(self):
         pass
 
-
     @property
     @abc.abstractmethod
     def free_balance(self):
         pass
 
-
     @abc.abstractmethod
     def fetch_trading_fees(self):
         pass
-
 
     @abc.abstractmethod
     def fetch_open_orders(self, symbol: str = None):
@@ -39,7 +37,7 @@ class CentralizedExchange(metaclass=abc.ABCMeta):
         pass
 
     @abc.abstractmethod
-    def cancel_order(self, order_id: int):
+    def cancel_order(self, order_id: int, symbol: str):
         pass
 
     @abc.abstractmethod
