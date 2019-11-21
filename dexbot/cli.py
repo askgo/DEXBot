@@ -173,7 +173,7 @@ def runarb(ctx):
             sys.exit(70)
 
     try:
-        log.info("Now running worker infrastructure")
+        log.info("Now running worker infrastructure -- testing: todo")
 #        worker = WorkerInfrastructure(ctx.config)
 #        worker.run()
     except errors.NoWorkersAvailable:
