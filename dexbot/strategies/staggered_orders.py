@@ -145,7 +145,7 @@ class Strategy(StrategyBase):
                 self.market_center_price = self.center_price
             else:
                 # Still not have market_center_price? Empty market, don't continue
-                self.log.warning('Cannot calculate center price on empty market, please set is manually')
+                self.log.warning('Cannot calculate center price on empty market, please set it manually')
                 return
 
         # Calculate balances, and use orders from previous call of self.refresh_orders() to reduce API calls
@@ -217,7 +217,7 @@ class Strategy(StrategyBase):
 
         # Maintain the history of free balances after maintenance runs.
         # Save exactly key values instead of full key because it may be modified later on.
-        self.refresh_balances(total_balances=False)
+        self.refresh_balances()
         self.base_balance_history.append(self.base_balance['amount'])
         self.quote_balance_history.append(self.quote_balance['amount'])
         if len(self.base_balance_history) > 3:
@@ -317,19 +317,76 @@ class Strategy(StrategyBase):
             self.base_asset_threshold = reserve_ratio * 10 ** -self.market['base']['precision']
             self.quote_asset_threshold = self.base_asset_threshold / self.market_center_price
 
-    def refresh_balances(self, total_balances=True, use_cached_orders=False):
+    def refresh_balances(self, use_cached_orders=False):
         """ This function is used to refresh account balances
-            :param bool | total_balances: refresh total balance or skip it
-            :param bool | use_cached_orders: when calculating orders balance, use cached orders from self.cached_orders
-        """
-        virtual_orders_base_balance = 0
-        virtual_orders_quote_balance = 0
 
-        # Get current account balances
+            :param bool use_cached_orders (optional): when calculating orders
+                balance, use cached orders from self.cached_orders
+
+            This version supports usage of same bitshares account across multiple workers with assets intersections.
+        """
+        # Balances in orders on all related markets
+        orders = self.get_all_own_orders(refresh=not use_cached_orders)
+        order_ids = [order['id'] for order in orders]
+        orders_balance = self.get_allocated_assets(order_ids)
+
+        # Balances in own orders
+        own_orders = self.get_own_orders(refresh=False)
+        order_ids = [order['id'] for order in own_orders]
+        own_orders_balance = self.get_allocated_assets(order_ids)
+
+        # Get account free balances (not allocated into orders)
         account_balances = self.count_asset(order_ids=[], return_asset=True)
 
-        self.base_balance = account_balances['base']
+        # Calculate full asset balance on account
+        quote_full_balance = account_balances['quote']['amount'] + orders_balance['quote']
+        base_full_balance = account_balances['base']['amount'] + orders_balance['base']
+
+        # Calculate operational balance for current worker
+        # Operational balance is a part of the whole account balance which should be designated to this worker
+        op_quote_balance = quote_full_balance
+        op_base_balance = base_full_balance
+        op_percent_quote = self.get_worker_share_for_asset(self.market['quote']['symbol'])
+        op_percent_base = self.get_worker_share_for_asset(self.market['base']['symbol'])
+        if op_percent_quote < 1:
+            op_quote_balance *= op_percent_quote
+            self.log.debug('Using {:.2%} of QUOTE balance ({:.{prec}f} {})'
+                           .format(op_percent_quote, op_quote_balance, self.market['quote']['symbol'],
+                                   prec=self.market['quote']['precision']))
+        if op_percent_base < 1:
+            op_base_balance *= op_percent_base
+            self.log.debug('Using {:.2%} of BASE balance ({:.{prec}f} {})'
+                           .format(op_percent_base, op_base_balance, self.market['base']['symbol'],
+                                   prec=self.market['base']['precision']))
+
+        # Count balances allocated into virtual orders
+        virtual_orders_base_balance = 0
+        virtual_orders_quote_balance = 0
+        if self.virtual_orders:
+            # Todo: can we use filtered orders from refresh_orders() here?
+            buy_orders = self.filter_buy_orders(self.virtual_orders)
+            sell_orders = self.filter_sell_orders(self.virtual_orders, invert=False)
+            virtual_orders_base_balance = reduce((lambda x, order: x + order['base']['amount']), buy_orders, 0)
+            virtual_orders_quote_balance = reduce((lambda x, order: x + order['base']['amount']), sell_orders, 0)
+
+        # Total balance per asset (orders balance and available balance)
+        # Total balance should be: max(operational, real_orders + virtual_orders)
+        # Total balance used when increasing least/closest orders
+        self.quote_total_balance = max(op_quote_balance, own_orders_balance['quote'] + virtual_orders_quote_balance)
+        self.base_total_balance = max(op_base_balance, own_orders_balance['base'] + virtual_orders_base_balance)
+
+        # Prepare variables with free balance available to the worker
         self.quote_balance = account_balances['quote']
+        self.base_balance = account_balances['base']
+
+        # Calc avail balance; avail balances used in maintain_strategy to pass into allocate_asset
+        # avail = total - real_orders - virtual_orders
+        self.quote_balance['amount'] = (
+            self.quote_total_balance
+            - own_orders_balance['quote']
+            - virtual_orders_quote_balance
+        )
+        self.base_balance['amount'] = self.base_total_balance - own_orders_balance['base'] - virtual_orders_base_balance
 
         # Reserve fees for N orders
         reserve_num_orders = 200
@@ -337,40 +394,14 @@ class Strategy(StrategyBase):
 
         # Finally, reserve only required asset
         if self.fee_asset['id'] == self.market['base']['id']:
-            self.base_balance['amount'] = self.base_balance['amount'] - fee_reserve
+            self.base_balance['amount'] -= fee_reserve
         elif self.fee_asset['id'] == self.market['quote']['id']:
-            self.quote_balance['amount'] = self.quote_balance['amount'] - fee_reserve
-
-        # Exclude balances allocated into virtual orders
-        if self.virtual_orders:
-            buy_orders = self.filter_buy_orders(self.virtual_orders)
-            sell_orders = self.filter_sell_orders(self.virtual_orders, invert=False)
-            virtual_orders_base_balance = reduce((lambda x, order: x + order['base']['amount']), buy_orders, 0)
-            virtual_orders_quote_balance = reduce((lambda x, order: x + order['base']['amount']), sell_orders, 0)
-            self.base_balance['amount'] -= virtual_orders_base_balance
-            self.quote_balance['amount'] -= virtual_orders_quote_balance
-
-        if not total_balances:
-            # Caller doesn't interesting in balances of real orders
-            return
-
-        # Balance per asset from orders
-        if use_cached_orders and self.cached_orders:
-            orders = self.cached_orders
-        else:
-            orders = self.own_orders
-        order_ids = [order['id'] for order in orders]
-        orders_balance = self.get_allocated_assets(order_ids)
-
-        # Total balance per asset (orders balance and available balance)
-        self.quote_total_balance = orders_balance['quote'] + self.quote_balance['amount'] + virtual_orders_quote_balance
-        self.base_total_balance = orders_balance['base'] + self.base_balance['amount'] + virtual_orders_base_balance
+            self.quote_balance['amount'] -= fee_reserve
 
     def refresh_orders(self):
         """ Updates buy and sell orders
         """
-        orders = self.own_orders
-        self.cached_orders = orders
+        orders = self.get_own_orders()
 
         # Sort virtual orders
         self.virtual_buy_orders = self.filter_buy_orders(self.virtual_orders, sort='DESC')
@@ -628,6 +659,8 @@ class Strategy(StrategyBase):
         """ Stores balance history entry if center price moved enough
 
             :param bool | force: True = force store data, False = store data only on center price change
+
+            Todo: this method is inaccurate when using single account accross multiple workers
         """
         need_store = False
         account = self.config['workers'][self.worker_name].get('account')
@@ -677,7 +710,7 @@ class Strategy(StrategyBase):
         own_precision = 0
         opposite_precision = 0
         opposite_symbol = ''
-        increase_finished = False
+        increase_status = None
 
         if asset == 'base':
             order_type = 'buy'
@@ -836,16 +869,16 @@ class Strategy(StrategyBase):
                         # Lower/upper bound has been reached and now will start allocating rest of the balance.
                         self['bootstrapping'] = False
                         self.log.debug('Increasing sizes of {} orders'.format(order_type))
-                        increase_finished = self.increase_order_sizes(asset, asset_balance, own_orders)
+                        increase_status = self.increase_order_sizes(asset, asset_balance, own_orders)
                     else:
                         # Range bound is not reached, we need to add additional orders at the extremes
                         self['bootstrapping'] = False
                         self.log.debug('Placing further order than current furthest {} order'.format(order_type))
                         self.place_further_order(asset, furthest_own_order, allow_partial=True)
                 else:
-                    increase_finished = True
+                    increase_status = 'done'
 
-            if (increase_finished and not self.check_partial_fill(closest_own_order)
+            if (increase_status == 'done' and not self.check_partial_fill(closest_own_order)
                     and not self.check_partial_fill(closest_opposite_order, fill_threshold=0)):
                 """ Replace partially filled closest orders only when allocation of excess funds was finished. This
                     would prevent an abuse case when we are operating inactive market. An attacker can massively dump
@@ -862,8 +895,8 @@ class Strategy(StrategyBase):
                 # Refresh balances to make "reserved" funds available
                 self.refresh_balances(use_cached_orders=True)
                 self.replace_partially_filled_order(closest_own_order)
-            elif (increase_finished and not self.check_partial_fill(closest_opposite_order, fill_threshold=(
-                    1 - self.partial_fill_threshold)) and self.bitshares.txbuffer.is_empty()):
+            elif (increase_status == 'done' and not self.check_partial_fill(closest_opposite_order, fill_threshold=(
+                    1 - self.partial_fill_threshold))):
                 # Dust order on opposite side, cancel dust order and place closer order
                 # Require empty txbuffer to avoid rare condition when order may be already canceled from
                 # replace_partially_filled_order() call.
@@ -1277,9 +1310,11 @@ class Strategy(StrategyBase):
             :param str asset: 'base' or 'quote', depending if checking sell or buy
             :param Amount asset_balance: Balance of the account
             :param list orders: List of buy or sell orders
-            :return: True = all available funds were allocated
-                     False = not all funds were allocated, can increase more orders next time
-            :rtype: bool
+            :return: status of funds allocation
+                    done = all funds were allocated
+                    done_with_ops = all funds were allocated, operations are pending in txbuffer
+                    in_progress = not all funds were allocated, can increase more orders next time
+            :rtype: str
         """
 
         # Create temp order list (copy.deepcopy() doesn't work here)
@@ -1304,6 +1339,7 @@ class Strategy(StrategyBase):
         opposite_symbol = ''
         precision = 0
         opposite_precision = 0
+        ops_num = 0
 
         if asset == 'quote':
             order_type = 'sell'
@@ -1363,11 +1399,15 @@ class Strategy(StrategyBase):
                         self.place_market_buy_order(order['quote']['amount'], price)
 
                 # Limit number of operations to send at once
-                if len(self.bitshares.txbuffer.ops) > 10:
-                    return False
+                ops_num = len(self.bitshares.txbuffer.ops)
+                if ops_num > 10:
+                    return 'in_progress'
 
-        # All funds were used
-        return True
+        if ops_num < 10:
+            return 'done_with_ops'
+        else:
+            # All funds were used
+            return 'done'
 
     def check_partial_fill(self, order, fill_threshold=None):
         """ Checks whether order was partially filled it needs to be replaced
@@ -1422,7 +1462,7 @@ class Strategy(StrategyBase):
                 price = order['price'] ** -1
                 self.place_market_sell_order(order['base']['amount'], price)
             if self.returnOrderId:
-                self.refresh_balances(total_balances=False)
+                self.refresh_balances()
         else:
             needed = order['base']['amount'] - order['for_sale']['amount']
             self.log.debug('Unable to replace partially filled {} order: avail/needed: {:.{prec}f}/{:.{prec}f} {}'
@@ -1960,21 +2000,21 @@ class Strategy(StrategyBase):
             :return dict | order: Returns virtual order instance
         """
         symbol = self.market['base']['symbol']
-        precision = self.market['base']['precision']
-
         order = VirtualOrder()
-        order['price'] = price
         order['id'] = str(uuid.uuid4())
 
-        quote_asset = Amount(amount, self.market['quote']['symbol'], bitshares_instance=self.bitshares)
+        precise_quote_amount = round(amount, self.market['quote']['precision'])
+        quote_asset = Amount(precise_quote_amount, self.market['quote']['symbol'], bitshares_instance=self.bitshares)
         order['quote'] = quote_asset
 
-        base_asset = Amount(amount * price, self.market['base']['symbol'], bitshares_instance=self.bitshares)
+        precise_base_amount = round(amount * price, self.market['base']['precision'])
+        base_asset = Amount(precise_base_amount, self.market['base']['symbol'], bitshares_instance=self.bitshares)
         order['base'] = base_asset
         order['for_sale'] = base_asset
+        order['price'] = precise_base_amount / precise_quote_amount
 
         self.log.info('Placing a virtual buy order with {:.{prec}f} {} @ {:.8f}'
-                      .format(order['base']['amount'], symbol, price, prec=precision))
+                      .format(order['base']['amount'], symbol, order['price'], prec=self.market['base']['precision']))
         self.virtual_orders.append(order)
 
         # Immediately lower avail balance
@@ -1992,21 +2032,21 @@ class Strategy(StrategyBase):
             :return dict | order: Returns virtual order instance
         """
         symbol = self.market['quote']['symbol']
-        precision = self.market['quote']['precision']
-
         order = VirtualOrder()
         order['id'] = str(uuid.uuid4())
-        order['price'] = price ** -1
 
-        quote_asset = Amount(amount * price, self.market['base']['symbol'], bitshares_instance=self.bitshares)
+        precise_quote_amount = round(amount * price, self.market['base']['precision'])
+        quote_asset = Amount(precise_quote_amount, self.market['base']['symbol'], bitshares_instance=self.bitshares)
         order['quote'] = quote_asset
 
-        base_asset = Amount(amount, self.market['quote']['symbol'], bitshares_instance=self.bitshares)
+        precise_base_amount = round(amount, self.market['quote']['precision'])
+        base_asset = Amount(precise_base_amount, self.market['quote']['symbol'], bitshares_instance=self.bitshares)
         order['base'] = base_asset
         order['for_sale'] = base_asset
+        order['price'] = precise_base_amount / precise_quote_amount
 
         self.log.info('Placing a virtual sell order with {:.{prec}f} {} @ {:.8f}'
-                      .format(amount, symbol, price, prec=precision))
+                      .format(amount, symbol, order['price'], prec=self.market['quote']['precision']))
         self.virtual_orders.append(order)
 
         # Immediately lower avail balance
