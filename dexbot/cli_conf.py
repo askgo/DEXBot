@@ -34,9 +34,9 @@ ARB_STRATEGIES = [
     {'tag': 'simplearb',
      'class': 'dexbot.strategies.simple_arbitrage',
      'name': 'Simple Arbitrage'},
-#    {'tag': 'mirrorarb',
-#     'class': 'dexbot.strategies.mirror_arbitrage',
-#     'name': 'Mirror Arbitrage'},
+    {'tag': 'mirror',
+     'class': 'dexbot.strategies.mirror_books',
+     'name': 'Mirror Books'},
 ]
 
 STRATEGIES = [
