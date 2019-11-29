@@ -27,8 +27,10 @@ from dexbot.whiptail import get_whiptail
 from dexbot.strategies.base import StrategyBase
 from dexbot.config_validator import ConfigValidator
 from dexbot.node_manager import get_sorted_nodelist
+from dexbot.keyring_manager import set_keyring, del_keyring
 
 import dexbot.helper
+
 
 ARB_STRATEGIES = [
     {'tag': 'simplearb',
@@ -300,6 +302,18 @@ def configure_worker(whiptail, worker_config, bitshares_instance, arb=False):
     return worker_config
 
 
+def set_cex_credentials(strategy_name, whiptail):
+    api_key = whiptail.prompt("CEX Api Key")
+    set_keyring(strategy_name, 'api_key', api_key)
+    secret = whiptail.prompt("CEX Secret")
+    set_keyring(strategy_name, 'secret', secret)
+
+
+def del_cex_credentials(strategy_name):
+    del_keyring(strategy_name, 'api_key')
+    del_keyring(strategy_name, 'secret')
+
+
 def configure_dexbot(config, ctx, arb):
     """ Main `cli configure` entrypoint
 
@@ -320,15 +334,18 @@ def configure_dexbot(config, ctx, arb):
             if len(txt) == 0:
                 whiptail.alert("Worker name cannot be blank. ")
             else:
+                if arb:
+                    set_cex_credentials(txt, whiptail)
                 config['workers'] = {txt: configure_worker(whiptail, {}, bitshares_instance, arb)}
                 if not whiptail.confirm("Set up another worker?\n(DEXBot can run multiple workers in one instance)"):
                     break
         setup_systemd(whiptail, config)
     else:
-        while True:
-            action = whiptail.menu(
-                "You have an existing configuration.\nSelect an action:",
-                [('LIST', 'List your workers'),
+        cex_items = [('ADD_CEX', 'Add CEX credentials'),
+                     ('EDIT_CEX', 'Edit CEX credentials'),
+                     ('DEL_CEX', 'Delete CEX Credentials')]
+
+        menu_items = [('LIST', 'List your workers'),
                  ('NEW', 'Create a new worker'),
                  ('EDIT', 'Edit a worker'),
                  ('DEL_WORKER', 'Delete a worker'),
@@ -340,7 +357,15 @@ def configure_dexbot(config, ctx, arb):
                  ('SORT_NODES', 'By latency (uses default list)'),
                  ('DEL_NODE', 'Delete A Node'),
                  ('HELP', 'Where to get help'),
-                 ('EXIT', 'Quit this application')])
+                 ('EXIT', 'Quit this application')]
+
+        if arb:
+            menu_items[6:6] = cex_items
+
+        while True:
+            action = whiptail.menu(
+                "You have an existing configuration.\nSelect an action:",
+                menu_items)
 
             my_workers = [(index, index) for index in workers]
 
@@ -364,6 +389,8 @@ def configure_dexbot(config, ctx, arb):
                     worker_name = whiptail.menu("Select worker to edit", my_workers)
                     config['workers'][worker_name] = configure_worker(whiptail, config['workers'][worker_name],
                                                                       bitshares_instance, arb)
+                    if arb:
+                        set_cex_credentials(worker_name, whiptail)
                 else:
                     whiptail.alert('No workers to edit.')
             elif action == 'DEL_WORKER':
@@ -376,6 +403,8 @@ def configure_dexbot(config, ctx, arb):
                     # option
                     strategy = StrategyBase(worker_name, bitshares_instance=bitshares_instance, config=ctx.config)
                     strategy.clear_all_worker_data()
+                    if arb:
+                        del_cex_credentials(worker_name)
                 else:
                     whiptail.alert('No workers to delete.')
             elif action == 'NEW':
@@ -385,6 +414,8 @@ def configure_dexbot(config, ctx, arb):
                 elif not validator.validate_worker_name(worker_name):
                     whiptail.alert('Worker name needs to be unique. "{}" is already in use.'.format(worker_name))
                 else:
+                    if arb:
+                        set_cex_credentials(worker_name, whiptail)
                     config['workers'][worker_name] = configure_worker(whiptail, {}, bitshares_instance, arb)
             elif action == 'ADD':
                 add_account(whiptail, bitshares_instance)
@@ -396,6 +427,18 @@ def configure_dexbot(config, ctx, arb):
                     action = whiptail.menu("Bitshares Account List (Name - Type)", account_list)
                 else:
                     whiptail.alert('You do not have any bitshares accounts in the wallet')
+            elif action == 'ADD_CEX':
+                if len(my_workers):
+                    worker_name = whiptail.menu("Select CEX worker to add credentials", my_workers)
+                    set_cex_credentials(worker_name, whiptail)
+            elif action == 'EDIT_CEX':
+                if len(my_workers):
+                    worker_name = whiptail.menu("Select CEX worker to edit credentials", my_workers)
+                    set_cex_credentials(worker_name, whiptail)
+            elif action =='DEL_CEX':
+                if len(my_workers):
+                    worker_name = whiptail.menu("Select CEX worker credentials to delete", my_workers)
+                    del_cex_credentials(worker_name)
             elif action == 'ADD_NODE':
                 txt = whiptail.prompt("Your name for the new node: e.g. wss://dexnode.net/ws")
                 # Insert new node on top of the list

@@ -15,7 +15,7 @@ from bitshares.exceptions import WrongMasterPasswordException
 
 from dexbot import VERSION, APP_NAME, AUTHOR
 from dexbot.config import Config
-from dexbot.node_manager import get_sorted_nodelist, ping
+from dexbot.node_manager import get_sorted_nodelist, ping, host_ip
 
 log = logging.getLogger(__name__)
 
@@ -98,7 +98,6 @@ def chain(f):
         nodelist = ctx.config["node"]
         timeout = int(ctx.obj.get("sortnodes"))
 
-        host_ip = '1.1.1.1'
         if ping(host_ip, 3) is False:
             click.echo("internet NOT available! Please check your connection!")
             log.critical("Internet not available, exiting")

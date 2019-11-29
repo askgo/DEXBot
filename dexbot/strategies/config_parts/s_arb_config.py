@@ -25,8 +25,6 @@ class SimpleArbConfig(BaseConfig):
         simplearb_orders_config = [
             ConfigElement('cex_price_source', 'choice', EXCHANGES[0][0], 'Select a CEX',
                           'The bot will arb with this Centralized Exchange', EXCHANGES),
-            ConfigElement('cex_apikey', 'string', '', 'API Key', 'Enter CEX API key here', ''),
-            ConfigElement('cex_secret', 'string', '', 'Secret', 'Enter CEX Secret here', ''),
             ConfigElement('cex_market', 'string', 'BTS/ETH', 'Market',
                           'CEX market to operate on, in the format QUOTE/BASE',
                           r'[A-Z0-9\.]+[:\/][A-Z0-9\.]+'),
@@ -42,7 +40,7 @@ class SimpleArbConfig(BaseConfig):
                           (1, 10, ''))
         ]
 
-        return BaseConfig.configure(return_base_config) + simplearb_orders_config
+        return simplearb_orders_config + BaseConfig.configure(return_base_config)
 
     @classmethod
     def configure_details(cls, include_default_tabs=True):
