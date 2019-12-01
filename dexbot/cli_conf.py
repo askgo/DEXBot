@@ -302,18 +302,6 @@ def configure_worker(whiptail, worker_config, bitshares_instance, arb=False):
     return worker_config
 
 
-def set_cex_credentials(strategy_name, whiptail):
-    api_key = whiptail.prompt("CEX Api Key")
-    set_keyring(strategy_name, 'api_key', api_key)
-    secret = whiptail.prompt("CEX Secret")
-    set_keyring(strategy_name, 'secret', secret)
-
-
-def del_cex_credentials(strategy_name):
-    del_keyring(strategy_name, 'api_key')
-    del_keyring(strategy_name, 'secret')
-
-
 def configure_dexbot(config, ctx, arb):
     """ Main `cli configure` entrypoint
 
@@ -390,6 +378,7 @@ def configure_dexbot(config, ctx, arb):
                     config['workers'][worker_name] = configure_worker(whiptail, config['workers'][worker_name],
                                                                       bitshares_instance, arb)
                     if arb:
+                        # get name of cex exchange here to validate credentials.
                         set_cex_credentials(worker_name, whiptail)
                 else:
                     whiptail.alert('No workers to edit.')
@@ -469,6 +458,31 @@ def configure_dexbot(config, ctx, arb):
 
     whiptail.clear()
     return config
+
+
+def set_cex_credentials(strategy_name, whiptail):
+    """
+    set the credentials for the centralized exchange
+    todo: check if the keys are valid and work w/exchange.
+    :param strategy_name:
+    :param whiptail:
+    :return:
+    """
+    api_key = whiptail.prompt("CEX Api Key")
+    set_keyring(strategy_name, 'api_key', api_key)
+    secret = whiptail.prompt("CEX Secret")
+    set_keyring(strategy_name, 'secret', secret)
+
+
+def del_cex_credentials(strategy_name):
+    """
+    delete values for strategy_name in keyring
+    :param strategy_name:
+    :return:
+    """
+    del_keyring(strategy_name, 'api_key')
+    del_keyring(strategy_name, 'secret')
+
 
 
 def add_account(whiptail, bitshares_instance):
