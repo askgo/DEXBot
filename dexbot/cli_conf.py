@@ -12,6 +12,7 @@ It's expected GUI/web interfaces will be re-implementing code in this file, but 
 understand the common code so worker strategy writers can define their configuration once
 for each strategy class.
 """
+from dexbot.fuller import TestApp
 
 import importlib
 import pathlib
@@ -399,7 +400,9 @@ def configure_dexbot(config, ctx):
                 # delete node permanently from config
                 setup_systemd(whiptail, config)
             elif action == 'HELP':
-                whiptail.alert("Please see https://github.com/Codaone/DEXBot/wiki")
+                app = TestApp()
+                app.run()
+#                whiptail.alert("Please see https://github.com/Codaone/DEXBot/wiki")
 
     whiptail.clear()
     return config
